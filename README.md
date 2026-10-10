@@ -1,0 +1,49 @@
+# 停车场管理智能体（parkade-agent）
+
+课程：《人工智能创新开发实践》课程设计 —— 任务书场景 1：停车场管理智能体（多模态 + 工具调用 Agent）。
+
+用户用自然语言对话，Agent 自主调用工具完成：抓拍识别车牌（双通道 OCR + 视觉模型 + 仲裁）、车位查询、入场登记、计费结算、预约；费率**解释**走知识库 RAG（附引用），费率**计算**走工具（防算术幻觉）。
+
+## 快速开始（Python 3.11，务必用 3.11）
+
+```bash
+py -3.11 -m venv .venv
+source .venv/Scripts/activate        # Git Bash；cmd 用 .venv\Scripts\activate.bat
+pip install -r requirements.txt
+
+cp .env.example .env                 # 填入你的 key（见下）
+# 终端1：Mock 停车场服务
+uvicorn mock_service.main:app --reload --port 8000
+# 终端2：前端（内含 Agent）
+streamlit run app/streamlit_app.py
+```
+
+`.env` 需要：`DASHSCOPE_API_KEY`（qwen-plus 主脑 + text-embedding-v3 嵌入 + qwen-vl 视觉）、或 `ZHIPU_API_KEY`（glm-4v-flash 视觉备选）；`LLM_MODEL` 可选 qwen-plus 或 deepseek-chat。
+
+## 目录导览
+
+| 目录 | 内容 | 负责人 |
+|---|---|---|
+| `common/` | `rates.yaml` 费率单一事实源 + `pricing.py` 计费引擎（唯一实现） | A |
+| `mock_service/` | 停车场模拟服务（FastAPI）：相机抓拍/车位/出入场/预约/虚拟时钟 | B |
+| `kb/` | 知识库：语料、建库脚本、标注评测集、命中率评测 | C |
+| `agent/` | LangGraph Agent、工具、双通道识别与仲裁、RAG 检索 | A |
+| `app/` | Streamlit 前端 | A |
+| `scripts/` | 冒烟脚本、答辩预热脚本 | A/B |
+| `docs/` | 接口契约、三人执行方案、任务板、AI 档案、例会纪要、报告 | 全组 |
+
+## 文档入口（先读这两份再动手）
+
+- **`docs/接口契约.md`** —— 三方对接唯一依据，字段与规则冻结，变更走流程；
+- **`docs/成员A/B/C执行方案.md`** —— 各自的任务卡、验收命令、AI 提问模板、红线；
+- `开发方案.md` —— 总体方案（目标、架构、5 周排期、测试方案、答辩脚本）。
+
+## 验收指标（90–100 档锚点）
+
+RAG Top3 命中率 ≥95%（60 条标注集）；回答 100% 基于私有知识（域外拒答）；多轮对话不丢上下文；响应 ≤2 秒（保底 ≤3 秒，预热后实测）；唯一计费实现，语料费率与 `rates.yaml` 逐项一致。
+
+## 协作约定
+
+- 分支：`feature/mock`（B）、`feature/kb`（C）、`feature/agent`（A）；合并回 `main` 由 A 执行（W2、W4 各一次）；
+- 提交信息：`[模块] 任务号 一句话`，如 `[mock] B3 exit 接通计费`；
+- 每天 commit + push + 记 AI 档案（`docs/ai档案/`），每周例会后更新 `docs/任务板.md`。
