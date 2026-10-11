@@ -18,7 +18,7 @@ uvicorn mock_service.main:app --reload --port 8000
 streamlit run app/streamlit_app.py
 ```
 
-`.env` 需要：`DASHSCOPE_API_KEY`（qwen-plus 主脑 + text-embedding-v3 嵌入 + qwen-vl 视觉）、或 `ZHIPU_API_KEY`（glm-4v-flash 视觉备选）；`LLM_MODEL` 可选 qwen-plus 或 deepseek-chat。
+`.env` 需按**三个独立配置块**填写（见 `.env.example`）：`LLM_*`（主脑，qwen-plus / deepseek-chat）、`VISION_*`（车牌视觉通道，qwen-vl-plus / glm-4v-flash）、`EMBEDDING_*`（知识库嵌入，text-embedding-v3）。三者分别配置、禁止混用，换任一个只改对应那一块；代码里统一经 `common/config.py` 读取。填好后运行 `python scripts/check_api.py` 逐块验证。
 
 ## 目录导览
 

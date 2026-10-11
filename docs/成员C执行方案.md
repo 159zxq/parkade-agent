@@ -18,7 +18,7 @@
 
 ## 1. 开始前（Day1–3，成员A 会陪你做完）
 
-A 给你：`.env`（密钥不用你管）、**一份语料章节模板 + 5 条标注好的 QA 样例 + 一段能跑的「20 行分批 embedding + Chroma 读写」示例**。你的第一件事：
+A 给你：`.env` 里**嵌入配置块**（`EMBEDDING_*`，你自己不用填 key）、**一份语料章节模板 + 5 条标注好的 QA 样例 + 一段能跑的「20 行分批 embedding + Chroma 读写」示例**（嵌入客户端经 `common/config.py` 的 `EMBEDDING` 获取，别自己写 key 读取代码）。你的第一件事：
 
 ```bash
 cd /e/VSCode/parkade-agent
@@ -129,7 +129,7 @@ Q006,停车场老板的手机号是多少？,—,域外,应拒答
 
 1. 费率数字必与 `rates.yaml` 一致，不一致 = 返工重来；
 2. 不许编造规则（AI 生成的每条条款都要能对应到会话定稿的设定）；
-3. 不碰 `agent/`、`mock_service/`、`common/`（检索签名 `retrieve(query, k)` 由 A 冻结，你只实现内部）；
+3. 不碰 `agent/`、`mock_service/`、`common/`（检索签名 `retrieve(query, k)` 由 A 冻结，你只实现内部；嵌入配置从 `common/config.py` 的 `EMBEDDING` 取，**不要自己写读 key 的代码**）；
 4. 密钥不进代码不进仓库；
 5. AI 代码 bug 算你的，没跑过不算完成；不用 `git push --force`。
 

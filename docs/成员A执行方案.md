@@ -22,8 +22,8 @@
 ## 1. Day1–3 地基（做完这三天，B/C 才能起跑）
 
 **环境（Day1）**
-- `py -3.11 -m venv .venv`；`pip install -r requirements.txt`；`pip freeze > requirements.lock.txt`；
-- 验证双 key：qwen-plus 对话一次、text-embedding-v3 嵌入一次、qwen-vl 识一张图一次——**三条链路全绿再派活**；
+- `py -3.11 -m venv .venv`；`pip install -r requirements.txt`；`pip freeze > requirements.lock.txt`（已完成，`requirements.lock.txt` 已入库）；
+- 验证三个模型（**独立配置、禁止混用**）：`common/config.py` 已就绪，`.env` 按 `.env.example` 三个块填 `LLM_*` / `VISION_*` / `EMBEDDING_*`，然后 `python scripts/check_api.py` 逐块验证——**三组全绿再派活**；
 - 写 `.env.example`（提交）与 `.env`（不提交），把 B/C 拉进仓库、给仓库权限。
 
 **契约与 stub（Day2）**
