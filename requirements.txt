@@ -8,6 +8,7 @@ openai
 
 langgraph
 langgraph-checkpoint-sqlite
+langchain
 langchain-openai
 
 chromadb

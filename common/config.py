@@ -26,12 +26,19 @@ load_dotenv(ROOT / ".env")
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """单个模型的独立配置。"""
+    """单个模型的独立配置。
+
+    api_mode: chat | responses | auto
+      - chat      = 标准 OpenAI Chat Completions（/v1/chat/completions）
+      - responses = OpenAI Responses API（/v1/responses，部分网关/新模型仅此接口）
+      - auto      = 先按 chat 调用，遇网关明确要求 Responses 时自动切换（仅验证脚本自动回退）
+    """
 
     label: str          # llm | vision | embedding
     api_key: str
     base_url: str
     model: str
+    api_mode: str = "auto"
 
     @property
     def configured(self) -> bool:
@@ -44,9 +51,18 @@ class ModelConfig:
         return OpenAI(api_key=self.api_key or "MISSING", base_url=self.base_url or None,
                       timeout=timeout)
 
+    def langchain_kwargs(self) -> dict:
+        """拼装 LangChain ChatOpenAI 的构造参数（Agent 集成用；嵌入模型不用）。"""
+        kw: dict = {"model": self.model, "api_key": self.api_key or "MISSING",
+                    "base_url": self.base_url}
+        if self.api_mode == "responses":
+            kw["use_responses_api"] = True
+        return kw
+
     def summary(self) -> str:
         key = f"{self.api_key[:6]}…" if self.api_key else "(未配置)"
-        return f"{self.label:<9} model={self.model:<22} base_url={self.base_url}  key={key}"
+        return (f"{self.label:<9} mode={self.api_mode:<9} model={self.model:<22} "
+                f"base_url={self.base_url}  key={key}")
 
 
 def _load(prefix: str, default_base: str, default_model: str) -> ModelConfig:
@@ -55,6 +71,7 @@ def _load(prefix: str, default_base: str, default_model: str) -> ModelConfig:
         api_key=os.getenv(f"{prefix}_API_KEY", "").strip(),
         base_url=os.getenv(f"{prefix}_BASE_URL", default_base).strip(),
         model=os.getenv(f"{prefix}_MODEL", default_model).strip(),
+        api_mode=os.getenv(f"{prefix}_API_MODE", "auto").strip().lower() or "auto",
     )
 
 

@@ -43,6 +43,7 @@ jsonpointer==3.2.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kubernetes==37.0.1
+langchain==1.4.4
 langchain-core==1.6.9
 langchain-openai==1.7.0
 langchain-protocol==0.0.19
