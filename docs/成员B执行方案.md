@@ -133,10 +133,13 @@ curl http://127.0.0.1:8000/lots/status
 
 - 参考思路（让 AI 完善成完整 `camera.py`，你负责验收）：
   ```python
-  # 用 PIL 画 640×480 灰底图 → 中央白底黑框车牌（字体 C:/Windows/Fonts/msyh.ttc）
-  # → 右下角水印 "{camera_id} {clock.now() 格式化}" → 存 JPEG 字节返回
-  # variant=="blur" → img.filter(ImageFilter.GaussianBlur(6))
-  # variant=="occluded" → 用灰块盖住车牌中间两位
+  # 640×480 灰底场景 → 中央粘贴 260×82 蓝底白字车牌（微软雅黑 msyhbd.ttc 52pt，
+  #   白描边 3px，绘制代码照抄 scripts/check_lpr.py 的 synth_plate/synth_scene，
+  #   该规格已实测 HyperLPR3 识别 3/3，不要自己改尺寸和字号）
+  # → 右下角水印 "{camera_id} {虚拟时间}" → 存 JPEG 字节返回
+  # variant=="blur" → 整图 img.filter(ImageFilter.GaussianBlur(6))
+  # variant=="occluded" → 用灰块盖住车牌中间两位（如 "京A**345"）
+  # 参考样例：docs/样例/plate_京A12345.png（B 画出来的图应与它同规格）
   ```
 - 相机→车牌映射照契约 §2 写死；`/debug/truth/{camera_id}` 返回同表内容。
 - 验收：浏览器打开

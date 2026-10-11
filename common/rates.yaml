@@ -1,0 +1,27 @@
+# 费率单一事实源 —— 契约 docs/接口契约.md §4
+# 全项目（mock、Agent 工具、语料、测试）所有费率数字以本文件为准。
+# 改动任何数字：必须同步核对 kb/corpus 语料与测试用例（走契约变更流程）。
+
+currency: 元
+free_minutes: 15          # 免费时段：入场后前 15 分钟
+unit_minutes: 30          # 计费单位：不足一单位按一单位计（向上取整）
+business_hours: "24h"     # 24 小时开放
+day_window:               # 标准时段（其余 22:00–07:00 为夜间时段）
+  start: "07:00"
+  end: "22:00"
+
+areas:
+  A: {name: 地面区, total: 30}
+  B: {name: 地下一层, total: 60}
+  C: {name: 地下二层, total: 60}
+
+# day_rate / night_rate：元 / 30 分钟；night_rate 为标准价的 50%
+# daily_cap：自然日封顶（元）；monthly_card：月卡价（元/月）
+vehicles:
+  小型车: {day_rate: 3.0, night_rate: 1.5, daily_cap: 30.0, monthly_card: 300.0}
+  中型车: {day_rate: 5.0, night_rate: 2.5, daily_cap: 45.0, monthly_card: 450.0}
+  大型车: {day_rate: 8.0, night_rate: 4.0, daily_cap: 60.0, monthly_card: 600.0}
+
+reserve:
+  keep_minutes: 30        # 保留至预约时间后 30 分钟
+  max_active_per_plate: 1 # 同一车牌同时最多 1 条有效预约
