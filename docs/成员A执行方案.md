@@ -45,7 +45,8 @@
 ## 2. 你的开发任务卡（W1–W4）
 
 ### A1：Agent 骨架（W1）
-- `agent/graph.py`：`create_react_agent` + `SqliteSaver`（`langgraph-checkpoint-sqlite`），`thread_id` = 前端会话 id；
+- `agent/graph.py`：组装 ReAct Agent + `SqliteSaver`（`langgraph-checkpoint-sqlite`），`thread_id` = 前端会话 id；
+  - **import 注意（2026-10-11 实测）**：实装 langgraph 1.2.14 起 `langgraph.prebuilt.create_react_agent` 已弃用，用 `from langchain.agents import create_agent`（签名相同：`create_agent(model, tools, checkpointer=...)`）；`SqliteSaver.from_conn_string()` 用法不变。
 - `agent/prompts.py` system prompt 写死五条边界：①费率解释走知识库附引用；②费率计算走工具；③识别失败引导重拍；④域外拒答不编造；⑤先结论后依据；
 - 验收：对 stub 能完成"查车位→入场"两轮对话，重启进程后历史不丢。
 
