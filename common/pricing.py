@@ -1,157 +1,111 @@
-"""计费引擎（唯一实现）。
+"""计费引擎 —— 全项目唯一计费实现（契约 docs/接口契约.md §4）。
 
-⚠️ 临时版本：本文件由成员B 按《接口契约》§4 计费规则代写，用于让 mock_service
-   独立跑通 B3 验收。**正式归属成员A（红线：common/pricing.py 由 A 维护）**，
-   A 交付真实实现后请整体替换本文件。
+mock_service 的 /exit 与 agent 工具 calculate_exit_fee 都必须调用本模块；
+禁止在任何其他文件重写费率逻辑。费率数字来自 common/rates.yaml（单一事实源）。
 
-契约约定签名（冻结，不得更改）：
-    calc_fee(vehicle_type, entry_time, exit_time) -> dict
-    返回字段与《接口契约》§3.5 一致，不含 plate/area/ticket_id：
-      duration_min, free_minutes, billable_minutes, units, subtotal,
-      cap_applied, total
+规则：
+1. 免费 15 分钟：计费区间为 [入场 + free_minutes, 出场]；
+2. 计费区间按时间窗切段：day_window 内为标准价，其余为夜间价（标准价 50%）；
+3. 每段独立向上取整到 unit_minutes 计费单位；
+4. 封顶：按自然日汇总当日各段费用后应用当日封顶，跨天各自封顶再累加；
+5. monthly=True（月卡车）总价 0。
 
-计费规则（《接口契约》§4，写死）：
-  1. 免费 15 分钟（每次停车一次）；
-  2. 扣除后按时间窗分段：07:00–22:00 标准价，22:00–07:00 夜间价（夜间价=标准价 50%）；
-  3. 每段时长独立向上取整到 30 分钟计费单位；
-  4. 封顶：按自然日分别汇总当日各段费用后应用该车型「当日封顶」；跨天则各日分别封顶后累加；
-  5. 月卡车辆（演示开关）总价 0。
-
-⚠️ 关于「免费时长扣除位置」的重要说明（请成员A 复核）：
-  契约正文写「从入场时刻起扣除」，但契约 §4 的三条工作示例（明确「直接作为测试断言」）
-  实测要求免费时长从**计费时间轴末尾**倒数扣除。以案例 2（21:30→23:10）为例：
-  实际切段为 [21:30–22:00]=30 分、[22:00–23:10]=70 分；免费 15 分从末段扣除后
-  末段计费 55 分→2 单位，结果 3+3=6.00 元；若从入场扣（21:45 起算）末段为 70 分→3 单位，
-  得 7.50 元，与契约应收不符。本实现以「示例即断言」为准，采用**末尾倒数扣除**。
+自测：python scripts/test_pricing.py
 """
-
 from __future__ import annotations
 
-import datetime as dt
+import math
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import yaml
 
-_RATES_PATH = Path(__file__).resolve().parent / "rates.yaml"
+RATES_PATH = Path(__file__).resolve().parent / "rates.yaml"
+FMT = "%Y-%m-%dT%H:%M:%S"
 
 
-def _load_rates(path: Path = _RATES_PATH) -> dict:
+def load_rates(path: Path | str = RATES_PATH) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-_RATES = _load_rates()
-
-_UNIT_MINUTES: int = int(_RATES["unit_minutes"])
-_FREE_MINUTES: int = int(_RATES["free_minutes"])
-_VEHICLE_TYPES: dict = _RATES["vehicle_types"]
-
-# 标准时段起点/终点（小时，含左不含右）
-_STD_START = int(str(_RATES["day_window"]["standard"]["start"]).split(":")[0])  # 07
-_STD_END = int(str(_RATES["day_window"]["standard"]["end"]).split(":")[0])      # 22
+def _to_dt(value) -> datetime:
+    return value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
 
 
-def _ceil_units(minutes: float) -> int:
-    """向上取整到计费单位数（不足 1 单位按 1 单位）。"""
-    if minutes <= 0:
-        return 0
-    return int(-(-minutes // _UNIT_MINUTES))  # ceil(minutes / unit)
+def _next_boundary(moment: datetime, day_start: time, day_end: time) -> datetime:
+    """返回 moment 之后最近的分界时刻（07:00 / 22:00 / 00:00）。"""
+    t = moment.time()
+    if day_start <= t < day_end:                                 # 标准时段 → 今日 22:00
+        return datetime.combine(moment.date(), day_end)
+    if t >= day_end:                                             # 前半夜 → 次日 00:00
+        return datetime.combine(moment.date() + timedelta(days=1), time(0, 0))
+    return datetime.combine(moment.date(), day_start)            # 后半夜 → 今日 07:00
 
 
-def calc_fee(vehicle_type: str, entry_time: dt.datetime, exit_time: dt.datetime) -> dict:
-    """计算停车费。返回 dict，字段见模块 docstring。"""
-    if vehicle_type not in _VEHICLE_TYPES:
-        raise ValueError(f"未知车型: {vehicle_type}")
+def calc_fee(vehicle_type: str, entry_time, exit_time, *, monthly: bool = False) -> dict:
+    """返回契约 §3.5 对应字段（不含 plate/area/ticket_id），另附 segments 分段明细。"""
+    rates = load_rates()
+    if vehicle_type not in rates["vehicles"]:
+        raise ValueError(f"未知车型: {vehicle_type!r}，可选: {list(rates['vehicles'])}")
+    vehicle = rates["vehicles"][vehicle_type]
 
-    rate = _VEHICLE_TYPES[vehicle_type]
+    free_minutes = int(rates["free_minutes"])
+    unit = int(rates["unit_minutes"])
+    day_start = time.fromisoformat(str(rates["day_window"]["start"]))
+    day_end = time.fromisoformat(str(rates["day_window"]["end"]))
+    cap = float(vehicle["daily_cap"])
 
-    duration_min = max(0, int(round((exit_time - entry_time).total_seconds() / 60)))
-    free_minutes = min(_FREE_MINUTES, duration_min)
-    billable_minutes = duration_min - free_minutes
+    start, end = _to_dt(entry_time), _to_dt(exit_time)
+    if end < start:
+        raise ValueError("出场时间早于入场时间")
 
-    # 把 [entry_time, exit_time] 按 07:00/22:00 边界切成若干「同费率」小段
-    segments: list[tuple[dt.datetime, dt.datetime, str]] = []
-    cur = entry_time
-    while cur < exit_time:
-        # 找当前时刻所属费率
-        is_std = _STD_START <= cur.hour < _STD_END
-        kind = "standard" if is_std else "night"
+    duration_min = int((end - start).total_seconds() // 60)
+    free = min(free_minutes, duration_min)
+    billable_minutes = duration_min - free
 
-        # 计算下一费率切换的边界时刻
-        if is_std:
-            boundary = cur.replace(hour=_STD_END, minute=0, second=0, microsecond=0)
-            if boundary <= cur:  # 防御
-                boundary = cur + dt.timedelta(hours=1)
-        else:
-            # 夜间：跨过 07:00 切换到标准价
-            boundary = cur.replace(hour=_STD_START, minute=0, second=0, microsecond=0)
-            if boundary <= cur:
-                boundary = boundary + dt.timedelta(days=1)
+    segments: list[dict] = []
+    cursor = start + timedelta(minutes=free)
+    while cursor < end:
+        nxt = min(_next_boundary(cursor, day_start, day_end), end)
+        minutes = int((nxt - cursor).total_seconds() // 60)
+        if minutes <= 0:
+            break
+        is_night = not (day_start <= cursor.time() < day_end)
+        unit_price = float(vehicle["night_rate"] if is_night else vehicle["day_rate"])
+        units = math.ceil(minutes / unit)
+        segments.append({
+            "start": cursor, "end": nxt,
+            "window": "night" if is_night else "day",
+            "minutes": minutes, "units": units,
+            "unit_price": unit_price, "amount": round(units * unit_price, 2),
+        })
+        cursor = nxt
 
-        seg_end = min(boundary, exit_time)
-        segments.append((cur, seg_end, kind))
-        cur = seg_end
+    day_sums: dict[date, float] = {}
+    for seg in segments:
+        d = seg["start"].date()
+        day_sums[d] = round(day_sums.get(d, 0.0) + seg["amount"], 2)
 
-    # 免费时长从「时间轴末尾」倒数扣除（见模块 docstring 说明，以契约 §4 示例为准）
-    rem_free = float(free_minutes)
-    billed_segments: list[tuple[dt.datetime, dt.datetime, str, float]] = []
-    for seg_start, seg_end, kind in reversed(segments):
-        seg_min = (seg_end - seg_start).total_seconds() / 60
-        if rem_free >= seg_min:
-            rem_free -= seg_min
-            continue  # 本段被免费时段完全覆盖，不计费
-        billable = seg_min - rem_free
-        rem_free = 0.0
-        billed_segments.append((seg_start, seg_end, kind, billable))
-    billed_segments.reverse()
-
-    # 逐段计费，并按自然日汇总
-    per_day: dict[dt.date, float] = {}
-    units_total = 0
-    for seg_start, _seg_end, kind, billable in billed_segments:
-        units = _ceil_units(billable)
-        units_total += units
-        price_per_unit = float(rate[kind])
-        cost = units * price_per_unit
-        day = seg_start.date()
-        per_day[day] = per_day.get(day, 0.0) + cost
-
-    # 逐日应用封顶
-    cap = float(rate["daily_cap"])
-    cap_applied = False
-    subtotal = 0.0
-    total = 0.0
-    for _day, day_cost in per_day.items():
-        subtotal += day_cost
-        if day_cost > cap:
-            cap_applied = True
-            total += cap
-        else:
-            total += day_cost
+    subtotal = round(sum(day_sums.values()), 2)
+    total = round(sum(min(x, cap) for x in day_sums.values()), 2)
+    cap_applied = any(x > cap for x in day_sums.values())
+    if monthly:
+        total = 0.0
 
     return {
+        "vehicle_type": vehicle_type,
+        "entry_time": start.strftime(FMT),
+        "exit_time": end.strftime(FMT),
         "duration_min": duration_min,
-        "free_minutes": free_minutes,
+        "free_minutes": free,
         "billable_minutes": billable_minutes,
-        "units": units_total,
-        "subtotal": round(subtotal, 2),
+        "units": sum(seg["units"] for seg in segments),
+        "subtotal": subtotal,
         "cap_applied": cap_applied,
-        "total": round(total, 2),
+        "total": total,
+        "segments": [
+            {k: (v.strftime(FMT) if isinstance(v, datetime) else v) for k, v in seg.items()}
+            for seg in segments
+        ],
     }
-
-
-if __name__ == "__main__":
-    # 契约 §4 三条工作示例自测（成员A 也会用这三条验收）
-    E = dt.datetime.fromisoformat
-    cases = [
-        ("小型车", E("2026-11-10T10:00:00"), E("2026-11-10T12:00:00"), 12.00),
-        ("小型车", E("2026-11-10T21:30:00"), E("2026-11-10T23:10:00"), 6.00),
-        ("小型车", E("2026-11-10T21:00:00"), E("2026-11-11T01:00:00"), 15.00),
-    ]
-    all_ok = True
-    for vt, ent, ext, expect in cases:
-        got = calc_fee(vt, ent, ext)
-        ok = abs(got["total"] - expect) < 1e-6
-        all_ok = all_ok and ok
-        print(f"[{'PASS' if ok else 'FAIL'}] {vt} {ent}->{ext} 期望 {expect} 实际 {got['total']}  明细={got}")
-    print("ALL PASS" if all_ok else "SOME FAILED")

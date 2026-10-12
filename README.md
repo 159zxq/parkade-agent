@@ -18,7 +18,7 @@ uvicorn mock_service.main:app --reload --port 8000
 streamlit run app/streamlit_app.py
 ```
 
-`.env` 需要：`DASHSCOPE_API_KEY`（qwen-plus 主脑 + text-embedding-v3 嵌入 + qwen-vl 视觉）、或 `ZHIPU_API_KEY`（glm-4v-flash 视觉备选）；`LLM_MODEL` 可选 qwen-plus 或 deepseek-chat。
+`.env` 需按**三个独立配置块**填写（见 `.env.example`）：`LLM_*`（主脑，qwen-plus / deepseek-chat）、`VISION_*`（车牌视觉通道，qwen-vl-plus / glm-4v-flash）、`EMBEDDING_*`（知识库嵌入，text-embedding-v3）。三者分别配置、禁止混用，换任一个只改对应那一块；代码里统一经 `common/config.py` 读取。填好后运行 `python scripts/check_api.py` 逐块验证。
 
 ## 目录导览
 
@@ -42,8 +42,9 @@ streamlit run app/streamlit_app.py
 
 RAG Top3 命中率 ≥95%（60 条标注集）；回答 100% 基于私有知识（域外拒答）；多轮对话不丢上下文；响应 ≤2 秒（保底 ≤3 秒，预热后实测）；唯一计费实现，语料费率与 `rates.yaml` 逐项一致。
 
-## 协作约定
+## 协作约定（fork → PR，B/C 无需仓库权限）
 
-- 分支：`feature/mock`（B）、`feature/kb`（C）、`feature/agent`（A）；合并回 `main` 由 A 执行（W2、W4 各一次）；
+- B/C 在 GitHub 上 **Fork** 本仓库 → 克隆各自的 fork 开工（git 步骤见各自执行方案末尾），完成后在自己 fork 的网页上 **Open pull request** → 目标 `159zxq/parkade-agent` 的 `main`，由 A 审查合并；
+- 分支：各自 fork 里用 `feature/mock`（B）、`feature/kb`（C）；A 直接在本仓库 `feature/agent`；
 - 提交信息：`[模块] 任务号 一句话`，如 `[mock] B3 exit 接通计费`；
 - 每天 commit + push + 记 AI 档案（`docs/ai档案/`），每周例会后更新 `docs/任务板.md`。

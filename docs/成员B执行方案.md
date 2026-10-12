@@ -15,22 +15,26 @@
 | 部署文档 mock 章节 + PPT 2 页 | W4 | 交付物②，答辩你讲这块 |
 | AI 档案逐日记录（写清哪段 AI 写的、你怎么改的） | 全程 | 交付物③ |
 
-## 1. 开始前（Day1–3，成员A 会陪你做完）
+## 1. 开始前（Day1–3，A 陪你做完）
 
-A 给你：完整仓库、`.env`（密钥不用你管）、以及**已装好依赖**的 venv 和全接口 stub（假数据版）。你的第一件事是把环境跑起来：
+B 只需要 Python 环境跑 mock 服务，**不需要任何 API key**。按顺序执行（按 §8 先 fork 并克隆**你自己的 fork**）：
 
 ```bash
-cd /e/VSCode/parkade-agent          # 克隆后的本地路径
-git pull
-source .venv/Scripts/activate       # Windows Git Bash；或 .venv/Scripts/activate.bat
+git checkout -b feature/mock
+
+# 1) 建环境（Python 必须用 3.11；装了多个版本时用 py -3.11）
+py -3.11 -m venv .venv
+source .venv/Scripts/activate          # Git Bash；cmd 用 .venv\Scripts\activate.bat
+pip install -r requirements.txt        # 或用 requirements.lock.txt 精确锁版
+
+# 2) 启动 mock（此时是 A 写的 stub 假数据版；你的任务是把假数据换成真逻辑）
 uvicorn mock_service.main:app --reload --port 8000
-# 另开一个终端：
+
+# 3) 另开一个终端验证
 curl http://127.0.0.1:8000/lots/status
 ```
 
-看到 `{"ok": true, ...}` 即环境 OK（此时返回的是 A 写的 stub 假数据，你的任务是把假数据换成真逻辑）。
-
-工作分支：`git checkout -b feature/mock`，以后都在这个分支干活，每天收工 commit + push。
+看到 `{"ok": true, ...}` 即环境 OK。装依赖报错把**完整报错**发群里（最常见：用了系统默认的 3.14 而不是 3.11）。
 
 ## 2. 工作方式：任务卡三步走
 
@@ -133,10 +137,13 @@ curl http://127.0.0.1:8000/lots/status
 
 - 参考思路（让 AI 完善成完整 `camera.py`，你负责验收）：
   ```python
-  # 用 PIL 画 640×480 灰底图 → 中央白底黑框车牌（字体 C:/Windows/Fonts/msyh.ttc）
-  # → 右下角水印 "{camera_id} {clock.now() 格式化}" → 存 JPEG 字节返回
-  # variant=="blur" → img.filter(ImageFilter.GaussianBlur(6))
-  # variant=="occluded" → 用灰块盖住车牌中间两位
+  # 640×480 灰底场景 → 中央粘贴 260×82 蓝底白字车牌（微软雅黑 msyhbd.ttc 52pt，
+  #   白描边 3px，绘制代码照抄 scripts/check_lpr.py 的 synth_plate/synth_scene，
+  #   该规格已实测 HyperLPR3 识别 3/3，不要自己改尺寸和字号）
+  # → 右下角水印 "{camera_id} {虚拟时间}" → 存 JPEG 字节返回
+  # variant=="blur" → 整图 img.filter(ImageFilter.GaussianBlur(6))
+  # variant=="occluded" → 用灰块盖住车牌中间两位（如 "京A**345"）
+  # 参考样例：docs/样例/plate_京A12345.png（B 画出来的图应与它同规格）
   ```
 - 相机→车牌映射照契约 §2 写死；`/debug/truth/{camera_id}` 返回同表内容。
 - 验收：浏览器打开
@@ -205,7 +212,24 @@ curl http://127.0.0.1:8000/lots/status
 | W2 末 | B5/B6 完成，全接口对齐契约，冒烟全绿 | 同上 |
 | W3 末 | 接口测试记录 + 模块章节初稿 | A 和你一起补 |
 
-## 8. git 习惯
+## 8. git 习惯（fork → PR，无需仓库权限）
 
-- 每天收工：`git add -A && git commit -m "[mock] B3 exit 接通计费" && git push`
-- 提交信息格式：`[mock] 任务号 一句话`；合并回 main 由 A 做（W2、W4 各一次）。
+**第一次准备**（网页 + 终端各一步）：
+
+1. 打开 https://github.com/159zxq/parkade-agent → 点右上角 **Fork** → 创建到你自己的账号；
+2. 克隆**你自己的 fork**（同页绿色 Code 按钮里有地址，把 `<你的用户名>` 换成你的 GitHub 用户名）：
+
+   ```bash
+   git clone https://github.com/<你的用户名>/parkade-agent.git
+   cd parkade-agent
+   git remote add upstream https://github.com/159zxq/parkade-agent.git
+   git checkout -b feature/mock
+   ```
+
+3. 开工前想拿最新代码：`git fetch upstream && git merge upstream/main`（有冲突拿不准就发给 A，别硬解）。
+
+**日常**：
+
+- 每天收工：`git add -A && git commit -m "[mock] B3 exit 接通计费"` → `git push -u origin feature/mock`（推到你自己的 fork）；
+- 完成一批任务卡（如 B1–B4）→ 在你 fork 的网页点 **Contribute → Open pull request**，目标分支选 `159zxq/parkade-agent` 的 `main`，标题写 `[mock] W1：B1-B4`，描述里贴验收命令输出；
+- A 在 GitHub 上审查合并，**你不需要**仓库权限，也**不要**直推上游；不用 `git push --force`。

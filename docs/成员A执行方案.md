@@ -22,8 +22,8 @@
 ## 1. Day1–3 地基（做完这三天，B/C 才能起跑）
 
 **环境（Day1）**
-- `py -3.11 -m venv .venv`；`pip install -r requirements.txt`；`pip freeze > requirements.lock.txt`；
-- 验证双 key：qwen-plus 对话一次、text-embedding-v3 嵌入一次、qwen-vl 识一张图一次——**三条链路全绿再派活**；
+- `py -3.11 -m venv .venv`；`pip install -r requirements.txt`；`pip freeze > requirements.lock.txt`（已完成，`requirements.lock.txt` 已入库）；
+- 验证三个模型（**独立配置、禁止混用**）：`common/config.py` 已就绪，`.env` 按 `.env.example` 三个块填 `LLM_*` / `VISION_*` / `EMBEDDING_*`，然后 `python scripts/check_api.py` 逐块验证——**三组全绿再派活**；
 - 写 `.env.example`（提交）与 `.env`（不提交），把 B/C 拉进仓库、给仓库权限。
 
 **契约与 stub（Day2）**
@@ -45,7 +45,8 @@
 ## 2. 你的开发任务卡（W1–W4）
 
 ### A1：Agent 骨架（W1）
-- `agent/graph.py`：`create_react_agent` + `SqliteSaver`（`langgraph-checkpoint-sqlite`），`thread_id` = 前端会话 id；
+- `agent/graph.py`：组装 ReAct Agent + `SqliteSaver`（`langgraph-checkpoint-sqlite`），`thread_id` = 前端会话 id；
+  - **import 注意（2026-10-11 实测）**：实装 langgraph 1.2.14 起 `langgraph.prebuilt.create_react_agent` 已弃用，用 `from langchain.agents import create_agent`（签名相同：`create_agent(model, tools, checkpointer=...)`）；`SqliteSaver.from_conn_string()` 用法不变。
 - `agent/prompts.py` system prompt 写死五条边界：①费率解释走知识库附引用；②费率计算走工具；③识别失败引导重拍；④域外拒答不编造；⑤先结论后依据；
 - 验收：对 stub 能完成"查车位→入场"两轮对话，重启进程后历史不丢。
 
@@ -79,8 +80,8 @@
 | 动作 | 频率 | 做法 |
 |---|---|---|
 | 验收门 | 每周固定 2 个（周三抽查、周日验收） | 照 B/C 方案里的检查点表逐项过；**只看验收命令输出**，不通读代码 |
-| 代码 review | 只看四条热文件 + 冒烟输出 | `git diff main..feature/mock -- mock_service/camera.py common/` 这类定向 diff |
-| 合并 | W2、W4 各一次 | `git checkout main && git merge --no-ff feature/mock`；冲突你解，解完跑冒烟再推 |
+| 代码 review | 只看四条热文件 + 冒烟输出 | 在 PR 的 **Files changed** 页定向看 `mock_service/camera.py`、`common/*`、`kb/corpus/*` 等敏感文件的 diff；不必通读全量代码 |
+| 合并 PR | 收到 ≤24h 内审 | GitHub `Pull requests` 页：看文件变更（四条热文件/`rates.yaml` 未被私改）+ PR 描述里的验收输出 → 点 **Merge**；合并后本地 `git pull` 同步 |
 | 例会 | 每周 ≥1 次，30 分钟 | 模板见开发方案附录 B；纪要归档 `docs/例会纪要/`；公开讲进度和占比 |
 | AI 档案 | 每天 10 分钟 | 你也要写（你写得最多，占档案大头，答辩"AI 辅助开发"叙事主要靠它） |
 | 节奏保护 | 随时 | B/C 的活任何卡死 >1 天 → 立刻触发兜底（你 1–2 天 AI 重做），先保关键路径 |
@@ -110,4 +111,4 @@
 1. `pricing.py` 与 `rates.yaml`（改了全链路数字打架）；
 2. 契约冻结后字段名（变更走流程）；
 3. 现场演示操作（只你手熟）；
-4. `main` 分支合并权（B/C 只推自己的 feature 分支）。
+4. `main` 分支合并权（B/C 通过 fork→PR 提交，由你在 GitHub 上审查合并）。

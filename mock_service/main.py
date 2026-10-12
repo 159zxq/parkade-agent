@@ -1,56 +1,47 @@
-"""停车场 Mock 服务主入口（FastAPI 路由）。
+"""Mock 停车场服务 —— stub 版（对接依据：docs/接口契约.md）。
 
-严格实现《接口契约》v1 §3 全部接口：
-  GET  /camera/{camera_id}/capture
-  GET  /debug/truth/{camera_id}
-  GET  /lots/status
-  POST /entry
-  POST /exit
-  POST /reserve
-  GET  /debug/time
-  POST /debug/time
-  POST /debug/time/reset
-  POST /debug/reset
+A0 阶段目标：所有路由**先返回契约结构的假数据**，让 Agent 开发不被阻塞。
+B 的任务卡 B1–B8：把每个 `TODO(Bx)` 换成真实逻辑（车位增减、票据表、冲突校验、
+相机图渲染），契约字段名/结构不许改（要改走变更流程）。
 
 启动：uvicorn mock_service.main:app --reload --port 8000
 """
-
 from __future__ import annotations
 
-import datetime as dt
+import io
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
+from PIL import Image
 from pydantic import BaseModel
 
-from common.pricing import calc_fee
-from mock_service.camera import render_plate_image
+from common.pricing import calc_fee, load_rates
 from mock_service.clock import clock
-from mock_service.state import (
-    CAMERAS,
-    DEFAULT_VEHICLE_TYPE,
-    RESERVE_KEEP_MINUTES,
-    fmt,
-    normalize_plate,
-    state,
-)
+from mock_service.state import CAMERA_TABLE, INITIAL_OCCUPIED
 
-app = FastAPI(title="Parkade Mock Service", version="1.0.0")
-
-VALID_VARIANTS = {"normal", "blur", "occluded"}
+FMT = "%Y-%m-%dT%H:%M:%S"
 
 
-# ---------------------------------------------------------------------------
-# 统一错误响应：HTTP 400/404 + {"ok": false, "error": {"code","message"}}
-# ---------------------------------------------------------------------------
-def err(code: str, message: str, status: int = 400) -> JSONResponse:
+def _placeholder_jpg() -> bytes:
+    """B5 之前的占位图（灰色 64×64 JPEG）；B5 用 PIL 渲染真实车牌图替换。"""
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (178, 178, 178)).save(buf, "JPEG", quality=60)
+    return buf.getvalue()
+
+
+_PLACEHOLDER_JPG = _placeholder_jpg()
+
+areas_cfg = load_rates()["areas"]
+
+app = FastAPI(title="停车场 Mock 服务（stub）", version="0.1-stub")
+
+
+def _err(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status,
                         content={"ok": False, "error": {"code": code, "message": message}})
 
 
-# ---------------------------------------------------------------------------
-# 请求体模型
-# ---------------------------------------------------------------------------
 class EntryReq(BaseModel):
     plate: str
     camera_id: str | None = None
@@ -68,197 +59,110 @@ class ReserveReq(BaseModel):
     area: str | None = None
 
 
-# ---------------------------------------------------------------------------
-# 3.1 相机抓拍
-# ---------------------------------------------------------------------------
-@app.get("/camera/{camera_id}/capture")
-def capture(camera_id: str, variant: str = Query("normal")):
-    if camera_id not in CAMERAS:
-        return err("CAMERA_NOT_FOUND", f"未知相机: {camera_id}", status=404)
-    if variant not in VALID_VARIANTS:
-        return err("INVALID_PARAM", f"variant 只能为 {sorted(VALID_VARIANTS)}")
-    jpeg = render_plate_image(camera_id, variant)
-    return Response(content=jpeg, media_type="image/jpeg")
+class TimeReq(BaseModel):
+    offset_minutes: int | None = None
+    set: str | None = None
 
 
-# ---------------------------------------------------------------------------
-# 3.2 真值对账（仅测试用，Agent 严禁调用）
-# ---------------------------------------------------------------------------
-@app.get("/debug/truth/{camera_id}")
-def truth(camera_id: str, variant: str = Query("normal")):
-    if camera_id not in CAMERAS:
-        return err("CAMERA_NOT_FOUND", f"未知相机: {camera_id}", status=404)
-    cam = CAMERAS[camera_id]
-    return {
-        "ok": True,
-        "camera_id": camera_id,
-        "plate": cam["plate"],
-        "vehicle_type": cam["vehicle_type"],
-        "variant_active": variant,
-    }
-
-
-# ---------------------------------------------------------------------------
-# 3.3 车位状态
-# ---------------------------------------------------------------------------
 @app.get("/lots/status")
-def lots_status(area: str | None = Query(None)):
-    counts = state.area_counts()
-    if area:
-        area = area.upper()
-        counts = [c for c in counts if c["area"] == area]
-    return {"ok": True, "updated_at": fmt(clock.now()), "areas": counts}
+def lots_status(area: str | None = None):
+    # TODO(B1): 从可变状态计算 free/occupied，随 /entry /exit 增减
+    result = []
+    for code, meta in areas_cfg.items():
+        if area and code != area.strip().upper():
+            continue
+        total = int(meta["total"])
+        occupied = len(INITIAL_OCCUPIED[code])
+        result.append({"area": code, "name": meta["name"], "total": total,
+                       "free": total - occupied, "occupied": occupied})
+    if not result:
+        return _err(400, "INVALID_PARAM", f"未知区域: {area}")
+    return {"ok": True, "updated_at": clock.now().strftime(FMT), "areas": result}
 
 
-# ---------------------------------------------------------------------------
-# 3.4 入场
-# ---------------------------------------------------------------------------
 @app.post("/entry")
 def entry(req: EntryReq):
-    plate = normalize_plate(req.plate)
-
-    # 契约 §3.4：入场规则只有两条——重复入场、无空位。
-    # 预约与入场互不约束（预约仅表意向，不绑定票据、不占位）。
-    if plate in state.parked:
-        return err("ALREADY_INSIDE", f"车牌 {plate} 已在场内")
-
-    # 选区域
-    if req.area:
-        area = req.area.upper()
-        if area not in {"A", "B", "C"}:
-            return err("INVALID_PARAM", f"未知区域: {req.area}")
-        if state.free_in(area) <= 0:
-            return err("NO_FREE_SPOT", f"{area} 区已满")
-    else:
-        area = state.first_area_with_free()
-        if area is None:
-            return err("NO_FREE_SPOT", "全区无空位")
-
-    # 车型：优先用相机映射，其次默认小型车
-    vehicle_type = DEFAULT_VEHICLE_TYPE
-    if req.camera_id:
-        if req.camera_id not in CAMERAS:
-            return err("CAMERA_NOT_FOUND", f"未知相机: {req.camera_id}", status=404)
-        vehicle_type = CAMERAS[req.camera_id]["vehicle_type"]
-
-    ticket = state.add_entry(plate, area, vehicle_type)
-    return {
-        "ok": True,
-        "ticket_id": ticket.ticket_id,
-        "plate": plate,
-        "area": area,
-        "entry_time": fmt(ticket.entry_time),
-    }
+    # TODO(B2): ALREADY_INSIDE / NO_FREE_SPOT 校验；占用车位；票据号递增
+    plate = req.plate.strip().upper()
+    return {"ok": True, "ticket_id": "T-0001", "plate": plate,
+            "area": req.area or "A", "entry_time": clock.now().strftime(FMT)}
 
 
-# ---------------------------------------------------------------------------
-# 3.5 出场结算
-# ---------------------------------------------------------------------------
 @app.post("/exit")
 def exit_(req: ExitReq):
-    plate = normalize_plate(req.plate)
-    ticket = state.tickets.get(plate)
-    if ticket is None:
-        return err("NOT_INSIDE", f"车牌 {plate} 不在场内")
-
-    exit_time = clock.now()
-    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time)
-
-    body = {
-        "ok": True,
-        "plate": plate,
-        "vehicle_type": ticket.vehicle_type,
-        "area": ticket.area,
-        "ticket_id": ticket.ticket_id,
-        "entry_time": fmt(ticket.entry_time),
-        "exit_time": fmt(exit_time),
-        **fee,
-    }
-
-    if not req.dry_run:
-        state.remove_entry(plate)
-
-    return body
+    # TODO(B3): 按票据表真实入场时间计费；NOT_INSIDE 校验；dry_run 不改状态
+    plate = req.plate.strip().upper()
+    now = clock.now()
+    fee = calc_fee("小型车", now - timedelta(hours=2), now)
+    return {"ok": True, "plate": plate, "vehicle_type": "小型车", "area": "A",
+            "ticket_id": "T-0001",
+            "entry_time": fee["entry_time"], "exit_time": fee["exit_time"],
+            "duration_min": fee["duration_min"], "free_minutes": fee["free_minutes"],
+            "billable_minutes": fee["billable_minutes"], "units": fee["units"],
+            "subtotal": fee["subtotal"], "cap_applied": fee["cap_applied"],
+            "total": fee["total"]}
 
 
-# ---------------------------------------------------------------------------
-# 3.6 预约
-# ---------------------------------------------------------------------------
 @app.post("/reserve")
 def reserve(req: ReserveReq):
-    plate = normalize_plate(req.plate)
-
-    if state.active_reservation(plate) is not None:
-        return err("RESERVE_CONFLICT", f"车牌 {plate} 已有未过期预约")
-
+    # TODO(B6): RESERVE_CONFLICT 校验；预约表；keep_until 计算
+    plate = req.plate.strip().upper()
     try:
-        reserve_time = dt.datetime.fromisoformat(req.reserve_time)
+        rt = datetime.fromisoformat(req.reserve_time)
     except ValueError:
-        return err("INVALID_PARAM", f"reserve_time 格式错误: {req.reserve_time}")
-
-    area = req.area.upper() if req.area else None
-    if area is not None and area not in {"A", "B", "C"}:
-        return err("INVALID_PARAM", f"未知区域: {req.area}")
-
-    res = state.add_reservation(plate, area, reserve_time)
-    return {
-        "ok": True,
-        "reserve_id": res.reserve_id,
-        "plate": plate,
-        "area": res.area,
-        "reserve_time": fmt(res.reserve_time),
-        "keep_until": fmt(res.keep_until),
-        "status": res.status,
-    }
+        return _err(400, "INVALID_PARAM", "reserve_time 需为 YYYY-MM-DDTHH:MM:SS")
+    keep = rt + timedelta(minutes=30)
+    return {"ok": True, "reserve_id": "R-0001", "plate": plate, "area": req.area or "A",
+            "reserve_time": rt.strftime(FMT), "keep_until": keep.strftime(FMT),
+            "status": "active"}
 
 
-# ---------------------------------------------------------------------------
-# 3.7 时钟与状态调试
-# ---------------------------------------------------------------------------
-def _time_payload() -> dict:
-    return {
-        "ok": True,
-        "virtual_time": fmt(clock.now()),
-        "real_time": fmt(clock.now() - dt.timedelta(minutes=clock.offset_minutes)),
-        "offset_minutes": clock.offset_minutes,
-    }
+@app.get("/camera/{camera_id}/capture")
+def capture(camera_id: str, variant: str = "normal"):
+    # TODO(B5): PIL 渲染 640×480 车牌图；variant ∈ normal|blur|occluded
+    if camera_id not in CAMERA_TABLE:
+        return _err(404, "CAMERA_NOT_FOUND", f"未知相机: {camera_id}")
+    return Response(content=_PLACEHOLDER_JPG, media_type="image/jpeg")
+
+
+@app.get("/debug/truth/{camera_id}")
+def truth(camera_id: str):
+    cam = CAMERA_TABLE.get(camera_id)
+    if cam is None:
+        return _err(404, "CAMERA_NOT_FOUND", f"未知相机: {camera_id}")
+    return {"ok": True, "camera_id": camera_id, "plate": cam["plate"],
+            "vehicle_type": cam["vehicle_type"], "variant_active": "normal"}
 
 
 @app.get("/debug/time")
 def get_time():
-    return _time_payload()
+    return {"ok": True, "virtual_time": clock.now().strftime(FMT),
+            "real_time": clock.real_now().strftime(FMT),
+            "offset_minutes": int(round(clock.offset_minutes()))}
 
 
 @app.post("/debug/time")
-async def set_time(request: Request):
-    body = await request.json()
-    if "set" in body and body["set"]:
+def set_time(req: TimeReq):
+    if req.offset_minutes is not None:
+        clock.add_offset(req.offset_minutes)
+    elif req.set:
         try:
-            clock.set_time(body["set"])
+            clock.set_time(req.set)
         except ValueError:
-            return err("INVALID_PARAM", f"set 格式错误: {body['set']}")
-    elif "offset_minutes" in body:
-        try:
-            clock.add_offset(int(body["offset_minutes"]))
-        except (TypeError, ValueError):
-            return err("INVALID_PARAM", "offset_minutes 必须为整数")
+            return _err(400, "INVALID_PARAM", "set 需为 YYYY-MM-DDTHH:MM:SS")
     else:
-        return err("INVALID_PARAM", "需提供 set 或 offset_minutes")
-    return _time_payload()
+        return _err(400, "INVALID_PARAM", "需要 offset_minutes 或 set")
+    return get_time()
 
 
 @app.post("/debug/time/reset")
 def reset_time():
     clock.reset()
-    return _time_payload()
+    return get_time()
 
 
 @app.post("/debug/reset")
 def reset_all():
-    state.reset()
-    return {"ok": True, "updated_at": fmt(clock.now())}
-
-
-@app.get("/")
-def root():
-    return {"ok": True, "service": "parkade-mock", "docs": "/docs"}
+    # TODO(B): 连同车位/票据/预约一起恢复初始（stub 版仅重置时钟）
+    clock.reset()
+    return {"ok": True}

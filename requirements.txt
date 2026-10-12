@@ -4,9 +4,11 @@ httpx
 python-dotenv
 pyyaml
 pandas
+openai
 
 langgraph
 langgraph-checkpoint-sqlite
+langchain
 langchain-openai
 
 chromadb
