@@ -80,8 +80,8 @@
 | 动作 | 频率 | 做法 |
 |---|---|---|
 | 验收门 | 每周固定 2 个（周三抽查、周日验收） | 照 B/C 方案里的检查点表逐项过；**只看验收命令输出**，不通读代码 |
-| 代码 review | 只看四条热文件 + 冒烟输出 | `git diff main..feature/mock -- mock_service/camera.py common/` 这类定向 diff |
-| 合并 | W2、W4 各一次 | `git checkout main && git merge --no-ff feature/mock`；冲突你解，解完跑冒烟再推 |
+| 代码 review | 只看四条热文件 + 冒烟输出 | 在 PR 的 **Files changed** 页定向看 `mock_service/camera.py`、`common/*`、`kb/corpus/*` 等敏感文件的 diff；不必通读全量代码 |
+| 合并 PR | 收到 ≤24h 内审 | GitHub `Pull requests` 页：看文件变更（四条热文件/`rates.yaml` 未被私改）+ PR 描述里的验收输出 → 点 **Merge**；合并后本地 `git pull` 同步 |
 | 例会 | 每周 ≥1 次，30 分钟 | 模板见开发方案附录 B；纪要归档 `docs/例会纪要/`；公开讲进度和占比 |
 | AI 档案 | 每天 10 分钟 | 你也要写（你写得最多，占档案大头，答辩"AI 辅助开发"叙事主要靠它） |
 | 节奏保护 | 随时 | B/C 的活任何卡死 >1 天 → 立刻触发兜底（你 1–2 天 AI 重做），先保关键路径 |
@@ -111,4 +111,4 @@
 1. `pricing.py` 与 `rates.yaml`（改了全链路数字打架）；
 2. 契约冻结后字段名（变更走流程）；
 3. 现场演示操作（只你手熟）；
-4. `main` 分支合并权（B/C 只推自己的 feature 分支）。
+4. `main` 分支合并权（B/C 通过 fork→PR 提交，由你在 GitHub 上审查合并）。

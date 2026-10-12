@@ -16,19 +16,32 @@
 | `kb/eval_rag.py` 评测报告（命中率 ≥95%） | W3 | 硬指标证据 |
 | 知识库章节（报告）+ PPT 2 页 | W4 | 答辩你讲这块 |
 
-## 1. 开始前（Day1–3，成员A 会陪你做完）
+## 1. 开始前（Day1–3，启动包已在仓库，A 陪你跑通）
 
-A 给你：`.env` 里**嵌入配置块**（`EMBEDDING_*`，你自己不用填 key）、**一份语料章节模板 + 5 条标注好的 QA 样例 + 一段能跑的「20 行分批 embedding + Chroma 读写」示例**（嵌入客户端经 `common/config.py` 的 `EMBEDDING` 获取，别自己写 key 读取代码）。你的第一件事：
+**A 已准备好（直接拉代码就有）**：语料样例 `kb/corpus/01_总则.md`（第 1 章样板）、写作模板 `kb/corpus/_模板.md`、建库脚本 `kb/build_index.py`、评测脚本 `kb/eval_rag.py`、检索函数 `agent/rag.py`、样例评测集 `kb/eval_set.csv`（3 条带标注）。你**不用**写 key 读取代码（嵌入配置由 `common/config.py` 提供），你的工作是**写语料 + 标 QA + 跑脚本**。
+
+你的第一件事（按顺序，按 §10 先 fork 并克隆**你自己的 fork**）：
 
 ```bash
-cd /e/VSCode/parkade-agent
-git pull
-source .venv/Scripts/activate
-python -c "from agent.rag import retrieve; print(retrieve('测试'))"   # 跑通示例检索
+git checkout -b feature/kb
+
+# 1) 建环境（Python 必须用 3.11；装了多个版本时用 py -3.11）
+py -3.11 -m venv .venv
+source .venv/Scripts/activate          # Git Bash；cmd 用 .venv\Scripts\activate.bat
+pip install -r requirements.txt
+
+# 2) 配置嵌入（A 私下发给你的 EMBEDDING_* 三行，填进自己目录下的 .env 文件，见 .env.example 第 3 块）
+
+# 3) 跑通建库（用已有的第 1 章样例）
+python kb/build_index.py --rebuild     # 应看到 ingested 4 chunks 左右
+
+# 4) 跑通评测，确认输出命中率报告
+python kb/eval_rag.py                  # 应打印 3 条样例的命中率
+
+# 5) 读 5 分钟样品：kb/corpus/01_总则.md（照它的格式写后续章节）
 ```
 
-输出一个 list（哪怕内容还很少）即环境 OK。
-工作分支：`git checkout -b feature/kb`，每天 commit + push。
+两条脚本命令都出结果即环境 OK；任何一步报错把**完整输出**发给 A。
 
 ## 2. 你要理解的三件事（10 分钟读完）
 
@@ -142,6 +155,22 @@ Q006,停车场老板的手机号是多少？,—,域外,应拒答
 | W2 末 | 语料 70%、eval_set ≥40、命中率 ≥85% | 同上 |
 | W3 末 | 语料 100%、eval_set 60、**命中率 ≥95%** | A 接管调优，你转测试执行 |
 
-## 10. git 习惯
+## 10. git 习惯（fork → PR，无需仓库权限）
 
-`git add -A && git commit -m "[kb] 03 章费率语料 + QA×5" && git push`，每天一次；合并回 main 由 A 做。
+**第一次准备**：
+
+1. 打开 https://github.com/159zxq/parkade-agent → 右上角 **Fork** 到自己账号；
+2. 克隆**你自己的 fork**（把 `<你的用户名>` 换成你的 GitHub 用户名）：
+
+   ```bash
+   git clone https://github.com/<你的用户名>/parkade-agent.git
+   cd parkade-agent
+   git remote add upstream https://github.com/159zxq/parkade-agent.git
+   git checkout -b feature/kb
+   ```
+
+**日常**：
+
+- 每天收工：`git add -A && git commit -m "[kb] 03 章费率语料 + QA×5"` → `git push -u origin feature/kb`（推到你自己的 fork）；
+- 写完一章（或一批 QA）→ 在你 fork 的网页点 **Contribute → Open pull request**，目标 `159zxq/parkade-agent` 的 `main`，标题写 `[kb] 第2章 区域与车位 + QA×6`；
+- A 在 GitHub 上审查合并；**你不需要**仓库权限，也**不要**直推上游；不用 `git push --force`。
