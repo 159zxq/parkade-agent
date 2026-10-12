@@ -1,0 +1,106 @@
+<Slide style={{ width: 1280, height: 720, background: '#FFFFFF', fontFamily: 'Source Han Sans, Microsoft YaHei, sans-serif', display: 'flex', flexDirection: 'column' }}>
+
+    {/* ===== A 页眉：深蓝顶条（A3 模式） ===== */}
+    <Box style={{ height: 64, background: '#1E4FA8', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 40, paddingRight: 40 }}>
+        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: 1 }}>停车场管理智能体 · Mock 服务模块</Text>
+        <Text style={{ fontSize: 16, color: '#BFD3EF' }}>成员B ｜ 接口总览</Text>
+    </Box>
+
+    {/* ===== B 区：标题块 y80–156 ===== */}
+    <Box style={{ paddingLeft: 40, paddingRight: 40, paddingTop: 20, display: 'flex', flexDirection: 'column' }}>
+        <Text style={{ fontSize: 36, fontWeight: 'bold', color: '#0E3F8C' }}>Mock 停车场服务：全接口总览</Text>
+        <Text style={{ fontSize: 18, color: '#4A5568', marginTop: 8 }}>
+            真实停车场的<Text style={{ fontSize: 18 }}>「行为等价替身」</Text>——10 个接口、4 类能力，为上游 Agent 提供可复现的数据基础
+        </Text>
+    </Box>
+
+    {/* ===== C 区：内容 y156–660 ===== */}
+    <Box style={{ paddingLeft: 40, paddingRight: 40, paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* 4 类能力 —— 2×2 矩阵 */}
+        <Box style={{ display: 'flex', flexDirection: 'row', gap: 16 }}>
+
+            {/* 卡1 车位管理 */}
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Box style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Box style={{ width: 30, height: 30, background: '#1E4FA8', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' }}>1</Text>
+                    </Box>
+                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0E3F8C' }}>车位管理</Text>
+                </Box>
+                <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>GET</span> /lots/status　余位实时查询<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>POST</span> /entry　　入场登记<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>POST</span> /exit　　　出场计费<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>POST</span> /reserve　车位预约
+                </Text>
+            </Box>
+
+            {/* 卡2 识别输入 */}
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Box style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Box style={{ width: 30, height: 30, background: '#1E4FA8', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' }}>2</Text>
+                    </Box>
+                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0E3F8C' }}>识别输入</Text>
+                </Box>
+                <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>GET</span> /camera/{'{id}'}/capture<br />
+                    　→ 返回 640×480 合成车牌图<br />
+                    　→ <span style={{ color: '#D9534F', fontWeight: 'bold' }}>normal / blur / occluded</span> 三变体<br />
+                    　→ 供双通道识别与仲裁矩阵验证
+                </Text>
+            </Box>
+        </Box>
+
+        <Box style={{ display: 'flex', flexDirection: 'row', gap: 16 }}>
+
+            {/* 卡3 调试支撑 */}
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Box style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Box style={{ width: 30, height: 30, background: '#1E4FA8', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#FFFFFF' }}>3</Text>
+                    </Box>
+                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0E3F8C' }}>调试支撑</Text>
+                </Box>
+                <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>GET</span> /debug/truth/{'{id}'}　真值对账<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>GET/POST</span> /debug/time　虚拟时钟<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>POST</span> /debug/time/reset<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>POST</span> /debug/reset　全状态复位
+                </Text>
+            </Box>
+
+            {/* 卡4 统一契约 */}
+            <Box style={{ flex: 1, background: '#0E3F8C', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Box style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Box style={{ width: 30, height: 30, background: '#FFFFFF', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0E3F8C' }}>4</Text>
+                    </Box>
+                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#FFFFFF' }}>统一契约</Text>
+                </Box>
+                <Text style={{ fontSize: 15, color: '#E8EFF8', lineHeight: 1.5 }}>
+                    成功 → <span style={{ fontWeight: 'bold', color: '#FFC107' }}>{"{ok:true, ...}"}</span><br />
+                    错误 → 400 / 404 + 标准错误码<br />
+                    7 个错误码：<span style={{ color: '#BFD3EF' }}>ALREADY_INSIDE · NOT_INSIDE<br />NO_FREE_SPOT · RESERVE_CONFLICT 等</span><br />
+                    字段冻结，<span style={{ fontWeight: 'bold', color: '#FFFFFF' }}>上游零适配接入</span>
+                </Text>
+            </Box>
+        </Box>
+
+        {/* 底部结论条 */}
+        <Box style={{ background: '#E8EFF8', borderLeft: '4px solid #1E4FA8', borderRadius: 4, paddingLeft: 16, paddingRight: 16, paddingTop: 10, paddingBottom: 10, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1E4FA8' }}>结论</Text>
+            <Text style={{ fontSize: 16, color: '#1A2230' }}>
+                契约先行 + 唯一实现原则（计费走 common/pricing.py、时间走 clock.now()）→ 接口冒烟 <span style={{ fontWeight: 'bold', color: '#0E3F8C' }}>33/33 全绿</span>
+            </Text>
+        </Box>
+    </Box>
+
+    {/* ===== D 页脚 y660–700 ===== */}
+    <Box style={{ height: 44, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 40, paddingRight: 40 }}>
+        <Text style={{ fontSize: 14, color: '#8B97A8' }}>《人工智能创新开发实践》课程设计 ｜ 停车场管理智能体</Text>
+        <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1E4FA8' }}>01 / 02</Text>
+    </Box>
+
+</Slide>

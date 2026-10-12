@@ -1,0 +1,123 @@
+<Slide style={{ width: 1280, height: 720, background: '#FFFFFF', fontFamily: 'Source Han Sans, Microsoft YaHei, sans-serif', display: 'flex', flexDirection: 'column' }}>
+
+    {/* ===== A 页眉：深蓝顶条 ===== */}
+    <Box style={{ height: 64, background: '#1E4FA8', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 40, paddingRight: 40 }}>
+        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFFFFF', letterSpacing: 1 }}>停车场管理智能体 · Mock 服务模块</Text>
+        <Text style={{ fontSize: 16, color: '#BFD3EF' }}>成员B ｜ 技术亮点</Text>
+    </Box>
+
+    {/* ===== B 区：标题块 ===== */}
+    <Box style={{ paddingLeft: 40, paddingRight: 40, paddingTop: 20, display: 'flex', flexDirection: 'column' }}>
+        <Text style={{ fontSize: 36, fontWeight: 'bold', color: '#0E3F8C' }}>虚拟时钟：让计费演示成立</Text>
+        <Text style={{ fontSize: 18, color: '#4A5568', marginTop: 8 }}>
+            计费演示要「停 2 小时收 12 元」，现场不可能真等——用<Text style={{ fontSize: 18 }}>时间注入</Text>解耦「计费逻辑」与「真实等待」
+        </Text>
+    </Box>
+
+    {/* ===== C 区：内容 ===== */}
+    <Box style={{ paddingLeft: 40, paddingRight: 40, paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* 上排：左=原理 右=演示链路 */}
+        <Box style={{ display: 'flex', flexDirection: 'row', gap: 16 }}>
+
+            {/* 左卡：机制原理 */}
+            <Box style={{ width: 380, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0E3F8C' }}>机制：时间偏移量</Text>
+                <Box style={{ background: '#FFFFFF', borderRadius: 6, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, border: '1px solid #E5E7EB' }}>
+                    <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.7, fontFamily: 'Consolas, monospace' }}>
+                        业务时间 = 真实时间 + offset
+                    </Text>
+                </Box>
+                <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.6 }}>
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>set</span>　绝对设置到某时刻<br />
+                    <span style={{ fontWeight: 'bold', color: '#1E4FA8' }}>offset_minutes</span>　相对快进 N 分钟
+                </Text>
+                <Box style={{ background: '#E8EFF8', borderRadius: 4, paddingLeft: 12, paddingRight: 12, paddingTop: 8, paddingBottom: 8 }}>
+                    <Text style={{ fontSize: 14, color: '#0E3F8C', lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 'bold' }}>铁律：</span>全仓库业务时间只取自 clock.now()，datetime.now() 仅许出现于 clock.py
+                    </Text>
+                </Box>
+            </Box>
+
+            {/* 右卡：演示链路 4 步 */}
+            <Box style={{ flex: 1, background: '#FFFFFF', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 14, paddingBottom: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0E3F8C' }}>演示链路：4 步完成「2 小时计费」</Text>
+
+                <Box style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
+                    <Box style={{ width: 26, height: 26, background: '#1E4FA8', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#FFFFFF' }}>1</Text>
+                    </Box>
+                    <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 'bold' }}>设置虚拟时间</span> → 2026-11-10T10:00:00
+                    </Text>
+                </Box>
+
+                <Box style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
+                    <Box style={{ width: 26, height: 26, background: '#1E4FA8', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#FFFFFF' }}>2</Text>
+                    </Box>
+                    <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 'bold' }}>入场</span> 京A12345 → 票据 entry_time 记为虚拟时间 10:00
+                    </Text>
+                </Box>
+
+                <Box style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
+                    <Box style={{ width: 26, height: 26, background: '#1E4FA8', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#FFFFFF' }}>3</Text>
+                    </Box>
+                    <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 'bold' }}>快进</span> offset_minutes=120 → 虚拟时间推进到 12:00
+                    </Text>
+                </Box>
+
+                <Box style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
+                    <Box style={{ width: 26, height: 26, background: '#D9534F', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#FFFFFF' }}>4</Text>
+                    </Box>
+                    <Text style={{ fontSize: 15, color: '#1A2230', lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 'bold' }}>出场计费</span> → 时长 120 分，应收 <span style={{ fontWeight: 'bold', color: '#D9534F' }}>12.00 元</span>
+                    </Text>
+                </Box>
+            </Box>
+        </Box>
+
+        {/* 下排：KPI 数据强调 */}
+        <Box style={{ display: 'flex', flexDirection: 'row', gap: 16 }}>
+
+            <Box style={{ flex: 1, background: '#1E4FA8', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 12, paddingBottom: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 40, fontWeight: 'bold', color: '#FFFFFF' }}>12.00</Text>
+                <Text style={{ fontSize: 14, color: '#BFD3EF' }}>元 · 2小时计费结果</Text>
+            </Box>
+
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 12, paddingBottom: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 40, fontWeight: 'bold', color: '#0E3F8C' }}>0</Text>
+                <Text style={{ fontSize: 14, color: '#4A5568' }}>处 datetime.now() 泄漏</Text>
+            </Box>
+
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 12, paddingBottom: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 40, fontWeight: 'bold', color: '#0E3F8C' }}>33</Text>
+                <Text style={{ fontSize: 14, color: '#4A5568' }}>项接口冒烟全绿</Text>
+            </Box>
+
+            <Box style={{ flex: 1, background: '#F0F5FC', border: '1px solid #D6DCE5', borderRadius: 8, paddingLeft: 20, paddingRight: 20, paddingTop: 12, paddingBottom: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 40, fontWeight: 'bold', color: '#0E3F8C' }}>7.50</Text>
+                <Text style={{ fontSize: 14, color: '#4A5568' }}>元 · 跨夜间时段</Text>
+            </Box>
+        </Box>
+
+        {/* 底部结论条 */}
+        <Box style={{ background: '#E8EFF8', borderLeft: '4px solid #1E4FA8', borderRadius: 4, paddingLeft: 16, paddingRight: 16, paddingTop: 10, paddingBottom: 10, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1E4FA8' }}>价值</Text>
+            <Text style={{ fontSize: 16, color: '#1A2230' }}>
+                时间注入让计费逻辑与真实等待解耦——演示<span style={{ fontWeight: 'bold', color: '#0E3F8C' }}>可复现、可反复</span>，且覆盖免费时段、跨夜间、跨天、封顶全部计费分支
+            </Text>
+        </Box>
+    </Box>
+
+    {/* ===== D 页脚 ===== */}
+    <Box style={{ height: 44, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 40, paddingRight: 40 }}>
+        <Text style={{ fontSize: 14, color: '#8B97A8' }}>《人工智能创新开发实践》课程设计 ｜ 停车场管理智能体</Text>
+        <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1E4FA8' }}>02 / 02</Text>
+    </Box>
+
+</Slide>
