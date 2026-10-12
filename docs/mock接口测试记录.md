@@ -89,3 +89,5 @@ grep -rn "datetime.now()" mock_service/ | grep -v clock.py    # 应为空
 3. `scripts/smoke_stub.py`（A 的 stub 冒烟）中「/exit total=12.00」一项现在会 FAIL——
    这是**预期的**：stub 里 /exit 写死"入场 2 小时前"，真实现改为按真实入场时间计费，
    刚入场即出场自然为免费 0 元。该文件的使命已完成，由 `smoke_mock.py` 取代。
+   **A 决定（10-12）**：保留该文件作 A0 阶段证据链，断言改为「虚拟时间注入（10:00→+120min→12.00）」，
+   不再依赖 stub 假数据；修正后 **12/12 全绿**。
