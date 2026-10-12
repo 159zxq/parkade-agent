@@ -26,3 +26,6 @@ data/
 .DS_Store
 Thumbs.db
 ~$*
+
+# AI 助手本地工作目录（不属团队仓库）
+.workbuddy/
