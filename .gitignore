@@ -29,6 +29,7 @@ Thumbs.db
 
 # AI 助手本地工作目录（不属团队仓库）
 .workbuddy/
+.playwright-mcp/
 
 # PPT 生成工具工作目录与渲染核对图（过程产物，不入库）
 .slidep/
