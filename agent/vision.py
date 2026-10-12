@@ -35,6 +35,7 @@ CAPTURE_DIR = ROOT / "data" / "captures"
 
 OCR_TIMEOUT = 8.0     # 本地 OCR 单通道超时（含首次模型加载）
 VLM_TIMEOUT = 25.0    # 视觉 API 单通道超时（网关波动留余量）
+VLM_RETRIES = 2       # 网关限流(429)/瞬时错误的重试次数（退避 1.5s/3s）
 
 # 车牌：省份简称 + 字母 + 5~6 位字母数字（契约 §0）
 PLATE_RE = re.compile(
@@ -117,19 +118,28 @@ def _vlm_raw_call(data_url: str) -> str:
 
 
 def vlm_channel(image_bytes: bytes) -> dict | None:
-    """视觉模型识别。成功返回 {"plate", "raw"}；失败/超时/无法识别返回 None。"""
-    try:
-        b64 = base64.b64encode(image_bytes).decode()
-        data_url = f"data:image/jpeg;base64,{b64}"
-        text = _vlm_raw_call(data_url)
-        if "无法识别" in text:
-            return None
-        m = PLATE_RE.search(text.replace(" ", ""))
-        if m is None:
-            return None
-        return {"plate": m.group(0), "raw": text.strip()[:80]}
-    except Exception:  # noqa: BLE001
-        return None
+    """视觉模型识别。成功返回 {"plate", "raw"}；失败/超时/无法识别返回 None。
+
+    含重试：网关限流(429)是实测过的真实情况（连续演示会触发），
+    退避 1.5s/3s 重试两次，提升现场稳定性。
+    """
+    b64 = base64.b64encode(image_bytes).decode()
+    data_url = f"data:image/jpeg;base64,{b64}"
+    last_err: Exception | None = None
+    for attempt in range(VLM_RETRIES + 1):
+        try:
+            text = _vlm_raw_call(data_url)
+            if "无法识别" in text:
+                return None
+            m = PLATE_RE.search(text.replace(" ", ""))
+            if m is None:
+                return None
+            return {"plate": m.group(0), "raw": text.strip()[:80]}
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if attempt < VLM_RETRIES:
+                time.sleep(1.5 * (attempt + 1))  # 429 退避
+    return None
 
 
 # ---------------------------------------------------------------------------

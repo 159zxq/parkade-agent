@@ -26,19 +26,30 @@ from common.config import LLM
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "checkpoints.sqlite"
 
+# 最近一次 build_agent 创建的 RAG 中间件（chat_with_trace 取证用；
+# Streamlit 每会话一线程，中间件内部用 threading.local，天然隔离）
+_rag_middleware: RagContextMiddleware | None = None
+
 
 def build_agent(db_path: str | Path = DEFAULT_DB, *, with_rag: bool = True):
     """组装带落盘记忆的 Agent（同一 thread_id 的历史跨进程保持）。
 
     with_rag=False 时不挂检索中间件（离线调试/对照实验用）。
     """
+    global _rag_middleware
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    model = ChatOpenAI(**LLM.langchain_kwargs(), timeout=120)
+    # max_retries：网关限流(429)/瞬时错误自动退避重试，答辩现场更稳
+    model = ChatOpenAI(**LLM.langchain_kwargs(), timeout=120, max_retries=3)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     saver = SqliteSaver(conn)
-    middleware = [RagContextMiddleware()] if with_rag else []
+    middleware: list = []
+    if with_rag:
+        _rag_middleware = RagContextMiddleware()
+        middleware.append(_rag_middleware)
+    else:
+        _rag_middleware = None
     return create_agent(model, tools=ALL_TOOLS, system_prompt=SYSTEM_PROMPT,
                         middleware=middleware, checkpointer=saver)
 
@@ -56,9 +67,20 @@ def _content_to_text(content) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
-def chat(agent, thread_id: str, message: str) -> str:
-    """发一条消息，返回最终文本回复。"""
+def chat_with_trace(agent, thread_id: str, message: str) -> tuple[str, list[dict]]:
+    """发一条消息，返回 (文本回复, 本轮检索命中的片段列表)。
+
+    片段列表取自 RAG 中间件的线程局部存储（见 agent/rag_middleware.py），
+    供前端折叠展示引用。
+    """
     config = {"configurable": {"thread_id": thread_id}}
     result = agent.invoke({"messages": [{"role": "user", "content": message}]},
                           config=config)
-    return _content_to_text(result["messages"][-1].content)
+    text = _content_to_text(result["messages"][-1].content)
+    snippets = _rag_middleware.last_hits if _rag_middleware is not None else []
+    return text, snippets
+
+
+def chat(agent, thread_id: str, message: str) -> str:
+    """发一条消息，返回最终文本回复。"""
+    return chat_with_trace(agent, thread_id, message)[0]

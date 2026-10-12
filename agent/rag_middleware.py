@@ -1,17 +1,24 @@
 """RAG 上下文中间件 —— 对话前自动检索知识库并注入（契约 §6「检索为内建路径」）。
 
 职责：每次模型调用前，取最后一条用户消息作为 query → `retrieve(query, k=3)`
-→ 拼成"规章片段"块追加到 system prompt（附 chunk id 供引用），并写入
-消息 metadata（`rag_hits`），供前端/测试脚本取证。
+→ 拼成"规章片段"块追加到 system prompt（附 chunk id 供引用），并把命中
+写入**线程局部存储**（`last_hits`），供前端/测试脚本取证。
+
+取证实现说明（2026-10-12 实测）：langchain 1.x 的 wrap_model_call 里
+`handler()` 返回的 ModelResponse 不是 dict，且写入的 metadata 不会回传到
+图状态的最终消息（对象被重新构造）。故用 threading.local：
+- Streamlit 每个会话一个线程 → 天然隔离（agent 实例经 cache_resource 共享）；
+- CLI 单线程 → 直接可读。
 
 设计决定（A，2026-10-12）：
 - 检索挂在 `wrap_model_call` 而非做成工具——省掉"模型先调工具再答"的一整次往返，
   对话链路更快；引用出自检索结果本身，不依赖模型复述。
-- 检索无结果或向量库未建时**静默跳过**（把错误写进 metadata），不阻塞对话——
+- 检索无结果或向量库未建时**静默跳过**（把错误记进 last_error），不阻塞对话——
   否则 C 的库没建好会把整个 Agent 拖死。
 """
 from __future__ import annotations
 
+import threading
 from typing import Any, Callable
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
@@ -55,7 +62,20 @@ def _message_text(msg) -> str:
 
 
 class RagContextMiddleware(AgentMiddleware):
-    """对话前检索 + 注入。metadata 输出：rag_hits / rag_error（供测试与前端取证）。"""
+    """对话前检索 + 注入。取证经线程局部存储：`last_hits` / `last_error`。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._local = threading.local()
+
+    # —— 取证读取（同线程内有效；Streamlit 每会话一线程）——
+    @property
+    def last_hits(self) -> list[dict]:
+        return getattr(self._local, "hits", [])
+
+    @property
+    def last_error(self) -> str | None:
+        return getattr(self._local, "error", None)
 
     def wrap_model_call(self, request: ModelRequest, handler: Callable):
         query = _last_human_text(list(request.messages))
@@ -77,29 +97,7 @@ class RagContextMiddleware(AgentMiddleware):
             combined = f"{base_text}\n\n{rag_text}" if base_text else rag_text
             request = request.override(system_message=SystemMessage(content=combined))
 
-        response = handler(request)
-        try:  # 取证：挂在回复消息的 metadata 上
-            if isinstance(response, dict):  # ExtendedModelResponse
-                msg = response.get("result")
-            else:
-                msg = response
-            meta = getattr(msg, "response_metadata", None)
-            if isinstance(meta, dict):
-                meta["rag_hits"] = [h["chunk_id"] for h in hits]
-                meta["rag_error"] = error
-        except Exception:  # noqa: BLE001  取证失败不影响主流程
-            pass
-        return response
-
-
-def rag_trace(messages: list) -> tuple[list[str], str | None]:
-    """从对话消息序列中提取最近一次检索取证（测试脚本用）。"""
-    for msg in reversed(messages):
-        meta = getattr(msg, "response_metadata", None)
-        if isinstance(meta, dict) and "rag_hits" in meta:
-            return meta.get("rag_hits") or [], meta.get("rag_error")
-    return [], None
-
-
-def empty_metadata_keys() -> dict[str, Any]:
-    return {"rag_hits": [], "rag_error": None}
+        # 取证：写入线程局部存储（写消息 metadata 实测不可靠，见模块 docstring）
+        self._local.hits = hits
+        self._local.error = error
+        return handler(request)
