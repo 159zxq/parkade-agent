@@ -133,7 +133,11 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
 
 ## 5. 已知事项
 
-1. **计费口径**：免费 15 分钟**从入场时刻扣除**（契约 §4 v0.1），例2=7.50；统一走 A 的 `common/pricing.py`。
-2. `scripts/smoke_stub.py`（A 的 stub 冒烟）中 `/exit=12.00` 一项现将 FAIL —— **预期内**：
-   stub 写死"入场 2 小时前"，真实现按真实入场时间计费，该文件使命已完成。
-3. 本记录覆盖 B1–B6；B7b 位次即为本文件的定稿版本。
+1. **计费口径已与 A 对齐**：免费 15 分钟**从入场时刻扣除**（契约 §4 已由 A 修正为 v0.1，例2 = 7.50）；
+   统一走 A 的 `common/pricing.py`。
+2. `mock_service/` 现为完整实现（A 的 stub 中所有 `TODO(Bx)` 已替换为真逻辑）；
+   A 的常量表 `CAMERA_TABLE` / `INITIAL_OCCUPIED` 未改动，与契约 §2/§5 一致。
+3. `scripts/smoke_stub.py`（A 的 stub 冒烟）中「/exit total=12.00」一项曾因 stub 假数据失效——
+   **A 决定（10-12）**：保留该文件作 A0 阶段证据链，断言改为「虚拟时间注入（10:00→+120min→12.00）」，
+   不再依赖 stub 假数据；修正后 **12/12 全绿**。
+4. 本记录即 B7b 定稿版本，覆盖 B1–B6 全部接口 + 计费 + 时钟纪律 + 相机图规格。

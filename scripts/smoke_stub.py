@@ -1,7 +1,11 @@
 """stub 冒烟测试（A0 验收）——不启动服务，用 TestClient 直打全部路由。
 
 运行：python scripts/smoke_stub.py
-B 任务卡 B7 会在此基础上扩写成完整的 scripts/smoke_mock.py（真实逻辑断言）。
+
+状态（2026-10-12，A 复核后更新）：完整版 `scripts/smoke_mock.py`（33 项）已取代本脚本，
+本文件保留作 A0 阶段证据链。用例 3「/exit 计费」原按 stub 假数据写死"入场 2 小时前"，
+真实现下必然失败（见 docs/mock接口测试记录.md §5.3）——已改为**虚拟时间注入**
+（10:00 入场 → +120 分钟 → 12.00 元），保持用例意图且不依赖 stub。
 """
 from __future__ import annotations
 
@@ -41,11 +45,16 @@ def main() -> int:
     check("POST /entry 200 且返回 ticket_id",
           r.status_code == 200 and body.get("ok") is True and body.get("ticket_id"), str(body))
 
-    # 3) 出场：stub 走真实 calc_fee（2 小时小型车 = 12.00 元）
+    # 3) 出场：接通唯一计费实现（虚拟时间注入：10:00 入场 → +120 分钟 → 应收 12.00）
+    client.post("/debug/reset")
+    client.post("/debug/time", json={"set": "2026-11-10T10:00:00"})
+    client.post("/entry", json={"plate": "京A12345"})
+    client.post("/debug/time", json={"offset_minutes": 120})
     r = client.post("/exit", json={"plate": "京A12345", "dry_run": True})
     body = r.json()
     check("POST /exit total=12.00（接通唯一计费实现）",
           r.status_code == 200 and body.get("total") == 12.0, str(body))
+    client.post("/debug/reset")  # 复原状态与时钟，供后续用例
 
     # 4) 相机：已知相机返回图片字节；未知相机 404 且错误码正确
     r = client.get("/camera/cam-1/capture")
