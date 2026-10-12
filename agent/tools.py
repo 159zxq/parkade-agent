@@ -8,7 +8,7 @@ from __future__ import annotations
 import httpx
 from langchain_core.tools import tool
 
-from agent.vision import recognize_plate_v0
+from agent.vision import recognize_plate as _vision_recognize
 from common.config import MOCK_BASE
 
 _TIMEOUT = 15.0
@@ -32,9 +32,11 @@ def _post(path: str, payload: dict):
 
 @tool
 def recognize_plate(camera_id: str) -> dict:
-    """对指定相机抓拍单帧并识别车牌。相机 id：cam-1/cam-2/cam-3 为各入口，cam-4 为出口。
-    返回 plate 为车牌号（识别失败时为 null，source=failed，请引导用户重拍）。"""
-    return recognize_plate_v0(camera_id)
+    """对指定相机抓拍单帧并识别车牌（双通道：本地 OCR + 视觉模型，自动仲裁）。
+    相机 id：cam-1/cam-2/cam-3 为各入口，cam-4 为出口。
+    返回 source 字段：both_agree(双通道一致)/both_conflict(存在分歧,以OCR为准)/
+    ocr_only/vlm_only/failed(识别失败,请引导用户重拍)。plate 为 null 即识别失败。"""
+    return _vision_recognize(camera_id)
 
 
 @tool

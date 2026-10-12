@@ -1,15 +1,46 @@
-"""车牌识别 v0（A1 最小实现：仅本地 OCR 通道）。
+"""双通道车牌识别与仲裁 —— 契约 docs/接口契约.md §2/§6.3（A2）。
 
-A2（W2）在此基础上扩展为：本地 OCR ∥ 视觉 API 双通道 + 仲裁矩阵 + 图片哈希缓存。
-本文件保持可独立调用，A2 只改内部实现，不动返回结构（契约 `{plate, source, ocr, vlm, confidence}`）。
+通道一：HyperLPR3 本地 OCR；
+通道二：视觉大模型（common/config.py 的 VISION 独立配置组）。
+
+仲裁矩阵（契约 §6.3，五分支即测试用例表 TC-识别-xx）：
+  OCR成功 + VLM成功且一致 → both_agree      用结果，标记双通道一致
+  OCR成功 + VLM成功不一致 → both_conflict   以 OCR 为准，标记存在分歧
+  OCR成功 + VLM失败/超时  → ocr_only        OCR 结果
+  OCR失败 + VLM成功       → vlm_only        VLM 兜底
+  双失败                  → failed          提示重拍
+
+实现要点：
+- 双通道并行：ThreadPoolExecutor 两线程（本模块在同步工具调度下被调用，
+  线程池避免嵌套事件循环问题）；
+- 无缓存：每次调用都真实执行双通道识别（按需求方决定移除识别缓存）；
+- 返回结构（契约工具表）：{plate, source, ocr, vlm, confidence,
+  camera_id, variant, image_path, elapsed_ms}。
 """
 from __future__ import annotations
 
+import base64
 import io
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import httpx
 
-from common.config import MOCK_BASE
+from common.config import MOCK_BASE, VISION
+
+ROOT = Path(__file__).resolve().parents[1]
+CAPTURE_DIR = ROOT / "data" / "captures"
+
+OCR_TIMEOUT = 8.0     # 本地 OCR 单通道超时（含首次模型加载）
+VLM_TIMEOUT = 25.0    # 视觉 API 单通道超时（网关波动留余量）
+
+# 车牌：省份简称 + 字母 + 5~6 位字母数字（契约 §0）
+PLATE_RE = re.compile(
+    r"[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]"
+    r"[A-HJ-NP-Z][A-HJ-NP-Z0-9]{4,6}"
+)
 
 _LPR = None  # HyperLPR3 模型单例（首次调用加载，约 2-5 秒）
 
@@ -23,37 +54,160 @@ def _lpr():
     return _LPR
 
 
-def recognize_plate_v0(camera_id: str, variant: str = "normal") -> dict:
-    """抓拍单帧并本地 OCR 识别。返回契约结构（vlm 字段 A2 填充）。"""
-    empty = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
-             "confidence": None, "cached": False, "camera_id": camera_id}
-    try:
-        resp = httpx.get(f"{MOCK_BASE}/camera/{camera_id}/capture",
-                         params={"variant": variant}, timeout=15)
-    except httpx.HTTPError as e:
-        return {**empty, "error": f"相机服务不可达: {e}"}
-    if resp.status_code == 404:
-        return {**empty, "error": f"未知相机: {camera_id}"}
-    if resp.status_code != 200:
-        return {**empty, "error": f"抓拍失败: HTTP {resp.status_code}"}
-
-    # TODO(A2)：在此并行接入视觉 API 通道 + 仲裁矩阵；v0 仅本地 OCR
-    plate, confidence = None, None
+# ---------------------------------------------------------------------------
+# 通道一：本地 OCR
+# ---------------------------------------------------------------------------
+def ocr_channel(image_bytes: bytes) -> dict | None:
+    """HyperLPR3 本地识别。成功返回 {"plate", "confidence"}；失败返回 None。"""
     try:
         import numpy as np
         from PIL import Image
 
-        arr = np.array(Image.open(io.BytesIO(resp.content)).convert("RGB"))
+        arr = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
         results = _lpr()(arr)  # [(text, confidence, type, box), ...]
         if results:
-            plate = results[0][0].replace(" ", "")
-            confidence = float(results[0][1])
-    except Exception as e:  # noqa: BLE001
-        return {**empty, "error": f"本地 OCR 异常: {e}"}
+            plate = str(results[0][0]).replace(" ", "").upper()
+            return {"plate": plate, "confidence": round(float(results[0][1]), 4)}
+    except Exception:  # noqa: BLE001  通道失败一律降级为 None（由仲裁处理）
+        return None
+    return None
 
-    if plate:
-        return {"plate": plate, "source": "ocr_only",
-                "ocr": {"plate": plate, "confidence": round(confidence, 4)},
-                "vlm": None, "confidence": round(confidence, 4),
-                "cached": False, "camera_id": camera_id}
-    return {**empty, "error": "识别失败，请调整位置后重拍"}
+
+# ---------------------------------------------------------------------------
+# 通道二：视觉大模型
+# ---------------------------------------------------------------------------
+VLM_PROMPT = ("这是一张停车场抓拍图片。请识别图片中的车牌号码，只输出车牌号本身"
+              "（省份简称+字母+数字，如 京A12345）。若车牌不清晰或无法确定，"
+              "只输出四个字：无法识别")
+
+
+def _vlm_raw_call(data_url: str) -> str:
+    """按 VISION.api_mode 调用视觉模型（支持 Responses / Chat 双接口，auto 自动回退）。"""
+    client = VISION.client(timeout=VLM_TIMEOUT)
+
+    def via_chat() -> str:
+        r = client.chat.completions.create(
+            model=VISION.model,
+            messages=[{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": VLM_PROMPT},
+            ]}])
+        return r.choices[0].message.content or ""
+
+    def via_responses() -> str:
+        r = client.responses.create(
+            model=VISION.model,
+            input=[{"role": "user", "content": [
+                {"type": "input_image", "image_url": data_url},
+                {"type": "input_text", "text": VLM_PROMPT},
+            ]}])
+        return r.output_text or ""
+
+    mode = VISION.api_mode
+    if mode == "responses":
+        return via_responses()
+    if mode == "chat":
+        return via_chat()
+    try:  # auto：先标准接口，网关要求 Responses 时自动切换
+        return via_chat()
+    except Exception as e:  # noqa: BLE001
+        if "responses" in str(e).lower():
+            return via_responses()
+        raise
+
+
+def vlm_channel(image_bytes: bytes) -> dict | None:
+    """视觉模型识别。成功返回 {"plate", "raw"}；失败/超时/无法识别返回 None。"""
+    try:
+        b64 = base64.b64encode(image_bytes).decode()
+        data_url = f"data:image/jpeg;base64,{b64}"
+        text = _vlm_raw_call(data_url)
+        if "无法识别" in text:
+            return None
+        m = PLATE_RE.search(text.replace(" ", ""))
+        if m is None:
+            return None
+        return {"plate": m.group(0), "raw": text.strip()[:80]}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 仲裁（纯函数，离线可测）
+# ---------------------------------------------------------------------------
+def arbitrate(ocr: dict | None, vlm: dict | None) -> tuple[str, str | None, float | None]:
+    """契约 §6.3 仲裁矩阵。返回 (source, plate, confidence)。"""
+    if ocr and vlm:
+        if ocr["plate"] == vlm["plate"]:
+            return "both_agree", ocr["plate"], ocr.get("confidence")
+        return "both_conflict", ocr["plate"], ocr.get("confidence")  # 分歧：以 OCR 为准
+    if ocr:
+        return "ocr_only", ocr["plate"], ocr.get("confidence")
+    if vlm:
+        return "vlm_only", vlm["plate"], None
+    return "failed", None, None
+
+
+# ---------------------------------------------------------------------------
+# 主入口（同步；供 langchain 工具 / 测试脚本 / 前端调用）
+# ---------------------------------------------------------------------------
+def _capture(camera_id: str, variant: str) -> tuple[bytes | None, str | None]:
+    try:
+        resp = httpx.get(f"{MOCK_BASE}/camera/{camera_id}/capture",
+                         params={"variant": variant}, timeout=15)
+    except httpx.HTTPError as e:
+        return None, f"相机服务不可达: {e}"
+    if resp.status_code == 404:
+        return None, f"未知相机: {camera_id}"
+    if resp.status_code != 200:
+        return None, f"抓拍失败: HTTP {resp.status_code}"
+    return resp.content, None
+
+
+def _wait(future, timeout: float) -> dict | None:
+    try:
+        return future.result(timeout=timeout)
+    except Exception:  # noqa: BLE001  超时/异常 → 通道失败
+        return None
+
+
+def _save_capture(camera_id: str, variant: str, jpg: bytes) -> str:
+    CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CAPTURE_DIR / f"{camera_id}_{variant}.jpg"
+    try:
+        path.write_bytes(jpg)
+    except OSError:
+        pass
+    return str(path)
+
+
+def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
+    """抓拍单帧 → 双通道并行识别 → 仲裁。返回契约结构。每次调用真实执行。"""
+    base = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
+            "confidence": None, "camera_id": camera_id,
+            "variant": variant, "image_path": None, "elapsed_ms": None}
+
+    jpg, err = _capture(camera_id, variant)
+    if jpg is None:
+        return {**base, "error": err, "elapsed_ms": 0}
+
+    image_path = _save_capture(camera_id, variant, jpg)
+
+    t0 = time.perf_counter()
+    ex = ThreadPoolExecutor(max_workers=2)
+    try:
+        f_ocr = ex.submit(ocr_channel, jpg)
+        f_vlm = ex.submit(vlm_channel, jpg)
+        ocr = _wait(f_ocr, OCR_TIMEOUT)
+        vlm = _wait(f_vlm, VLM_TIMEOUT)
+    finally:
+        ex.shutdown(wait=False)  # 超时的通道线程不阻塞返回
+
+    source, plate, confidence = arbitrate(ocr, vlm)
+    result = {"plate": plate, "source": source, "ocr": ocr, "vlm": vlm,
+              "confidence": confidence, "camera_id": camera_id,
+              "variant": variant, "image_path": image_path,
+              "elapsed_ms": int((time.perf_counter() - t0) * 1000)}
+    if source == "failed":
+        result["error"] = "识别失败，请调整位置后重拍"
+    return result
