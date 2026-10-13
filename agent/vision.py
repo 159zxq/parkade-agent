@@ -191,18 +191,31 @@ def _save_capture(camera_id: str, variant: str, jpg: bytes) -> str:
     return str(path)
 
 
-def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
-    """抓拍单帧 → 双通道并行识别 → 仲裁。返回契约结构。每次调用真实执行。"""
-    base = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
-            "confidence": None, "camera_id": camera_id,
-            "variant": variant, "image_path": None, "elapsed_ms": None}
+UPLOAD_DIR = ROOT / "data" / "uploads"
 
-    jpg, err = _capture(camera_id, variant)
-    if jpg is None:
-        return {**base, "error": err, "elapsed_ms": 0}
 
-    image_path = _save_capture(camera_id, variant, jpg)
+def _save_upload(filename: str, data: bytes) -> str:
+    import re as _re
 
+    safe = _re.sub(r"[^\w.\-]", "_", filename or "upload")[-60:]
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    path = UPLOAD_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{safe}"
+    try:
+        path.write_bytes(data)
+    except OSError:
+        pass
+    return str(path)
+
+
+def _data_url(image_bytes: bytes) -> str:
+    """按魔数选择 MIME（PNG/JPEG），构造 data URL。"""
+    mime = "image/png" if image_bytes[:4] == b"\x89PNG" else "image/jpeg"
+    b64 = base64.b64encode(image_bytes).decode()
+    return f"data:{mime};base64,{b64}"
+
+
+def _dual_channel(jpg: bytes) -> tuple[dict | None, dict | None, int]:
+    """双通道并行识别。返回 (ocr, vlm, 耗时ms)。"""
     t0 = time.perf_counter()
     ex = ThreadPoolExecutor(max_workers=2)
     try:
@@ -212,12 +225,41 @@ def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
         vlm = _wait(f_vlm, VLM_TIMEOUT)
     finally:
         ex.shutdown(wait=False)  # 超时的通道线程不阻塞返回
+    return ocr, vlm, int((time.perf_counter() - t0) * 1000)
 
+
+def recognize_image_bytes(jpg: bytes, *, image_path: str, origin: str,
+                          camera_id: str | None = None,
+                          variant: str | None = None) -> dict:
+    """对任意图片字节执行双通道识别 + 仲裁（相机抓拍与网页上传共用同一链路）。"""
+    ocr, vlm, ms = _dual_channel(jpg)
     source, plate, confidence = arbitrate(ocr, vlm)
     result = {"plate": plate, "source": source, "ocr": ocr, "vlm": vlm,
-              "confidence": confidence, "camera_id": camera_id,
-              "variant": variant, "image_path": image_path,
-              "elapsed_ms": int((time.perf_counter() - t0) * 1000)}
+              "confidence": confidence, "camera_id": camera_id, "variant": variant,
+              "origin": origin, "image_path": image_path, "elapsed_ms": ms}
     if source == "failed":
-        result["error"] = "识别失败，请调整位置后重拍"
+        result["error"] = ("识别失败，请调整位置后重拍" if origin == "camera"
+                           else "识别失败，请更换更清晰的图片后重试")
     return result
+
+
+def recognize_upload(image_bytes: bytes, filename: str = "upload.jpg") -> dict:
+    """网页上传图片的识别入口（模拟硬件抓拍图上传）。走与相机完全相同的双通道+仲裁。"""
+    image_path = _save_upload(filename, image_bytes)
+    return recognize_image_bytes(image_bytes, image_path=image_path,
+                                 origin="upload", variant=filename.rsplit(".", 1)[-1].lower()[:8])
+
+
+def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
+    """抓拍单帧 → 双通道并行识别 → 仲裁。返回契约结构。每次调用真实执行。"""
+    base = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
+            "confidence": None, "camera_id": camera_id, "variant": variant,
+            "origin": "camera", "image_path": None, "elapsed_ms": None}
+
+    jpg, err = _capture(camera_id, variant)
+    if jpg is None:
+        return {**base, "error": err, "elapsed_ms": 0}
+
+    image_path = _save_capture(camera_id, variant, jpg)
+    return recognize_image_bytes(jpg, image_path=image_path, origin="camera",
+                                 camera_id=camera_id, variant=variant)

@@ -59,7 +59,7 @@ class TimeReq(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# B1 — 车位状态
+# B1 — 车位状态（容量取自 state.capacity，可经 /debug/lots 调试）
 # ---------------------------------------------------------------------------
 @app.get("/lots/status")
 def lots_status(area: str | None = None):
@@ -67,10 +67,10 @@ def lots_status(area: str | None = None):
     for code, meta in areas_cfg.items():
         if area and code != area.strip().upper():
             continue
-        total = int(meta["total"])
+        total = state.capacity_in(code)
         occupied = state.occupied_in(code)
         result.append({"area": code, "name": meta["name"], "total": total,
-                       "free": total - occupied, "occupied": occupied})
+                       "free": max(0, total - occupied), "occupied": occupied})
     if not result:
         return _err(400, "INVALID_PARAM", f"未知区域: {area}")
     return {"ok": True, "updated_at": clock.now().strftime(FMT), "areas": result}
@@ -93,11 +93,11 @@ def entry(req: EntryReq):
         area = req.area.strip().upper()
         if area not in areas_cfg:
             return _err(400, "INVALID_PARAM", f"未知区域: {req.area}")
-        if state.free_in(area, int(areas_cfg[area]["total"])) <= 0:
+        if state.free_in(area, state.capacity_in(area)) <= 0:
             return _err(400, "NO_FREE_SPOT", f"{area} 区已满")
     else:
         area = next((c for c in areas_cfg
-                     if state.free_in(c, int(areas_cfg[c]["total"])) > 0), None)
+                     if state.free_in(c, state.capacity_in(c)) > 0), None)
         if area is None:
             return _err(400, "NO_FREE_SPOT", "全区无空位")
 
@@ -218,3 +218,39 @@ def reset_all():
     clock.reset()
     state.reset()
     return {"ok": True, "updated_at": clock.now().strftime(FMT)}
+
+
+# ---------------------------------------------------------------------------
+# 看板调试（前端"车位看板调试"用，契约 v1.1 新增）
+# ---------------------------------------------------------------------------
+class LotsDebugReq(BaseModel):
+    area: str
+    total: int | None = None       # 改区域总车位数（>= 当前占用）
+    occupied: int | None = None    # 直接设占用数（0..容量）
+
+
+@app.post("/debug/lots")
+def debug_lots(req: LotsDebugReq):
+    area = req.area.strip().upper()
+    if area not in areas_cfg:
+        return _err(400, "INVALID_PARAM", f"未知区域: {req.area}")
+
+    if req.total is not None:
+        if req.total < state.occupied_in(area):
+            return _err(400, "INVALID_PARAM",
+                        f"总车位数不能小于当前占用数 {state.occupied_in(area)}")
+        if req.total < 0:
+            return _err(400, "INVALID_PARAM", "总车位数不能为负")
+        state.set_capacity(area, req.total)
+
+    if req.occupied is not None:
+        if req.occupied < 0 or req.occupied > state.capacity_in(area):
+            return _err(400, "INVALID_PARAM",
+                        f"占用数需在 0..{state.capacity_in(area)} 之间（当前容量）")
+        state.set_occupancy(area, req.occupied)
+
+    meta = areas_cfg[area]
+    return {"ok": True, "area": area, "name": meta["name"],
+            "total": state.capacity_in(area), "occupied": state.occupied_in(area),
+            "free": max(0, state.capacity_in(area) - state.occupied_in(area)),
+            "updated_at": clock.now().strftime(FMT)}

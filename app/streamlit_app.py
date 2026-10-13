@@ -69,42 +69,35 @@ left, right = st.columns([3, 2], gap="large")
 # ────────────────────────── 左：聊天窗 ──────────────────────────
 with left:
     st.subheader("对话")
-    chat_box = st.container(height=560)
-    with chat_box:
-        for item in st.session_state.history:
-            with st.chat_message(item["role"]):
-                st.markdown(item["text"])
-                if item.get("snippets"):
-                    with st.expander(f"引用片段（{len(item['snippets'])} 条）"):
-                        for sn in item["snippets"]:
-                            st.markdown(f"**[{sn['chunk_id']}]** {sn['source']}")
-                            st.caption(sn["text"])
 
+    # 单一数据源渲染：全部从 history 渲染，不在同一次运行里做"增量追加渲染"
+    # （避免 Streamlit 前端 removeChild 崩溃；也不包固定高度滚动容器）。
+    for item in st.session_state.history:
+        with st.chat_message(item["role"]):
+            st.markdown(item["text"])
+            if item.get("snippets"):
+                with st.expander(f"引用片段（{len(item['snippets'])} 条）"):
+                    for sn in item["snippets"]:
+                        st.markdown(f"**[{sn['chunk_id']}]** {sn['source']}")
+                        st.caption(sn["text"])
+
+    # 输入框声明在历史之后 → 固定在聊天区底部
     prompt = st.chat_input("例如：A区还有多少车位？/ 让 cam-1 的车入场 / 小型车怎么收费？")
     if prompt:
-        st.session_state.history.append({"role": "user", "text": prompt})
-        with chat_box:
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            with st.chat_message("assistant"):
-                with st.spinner("智能体思考中…"):
-                    try:
-                        reply, snippets = chat_with_trace(
-                            get_agent(), st.session_state.thread_id, prompt)
-                    except Exception as e:  # noqa: BLE001
-                        msg = str(e)
-                        if "429" in msg or "frequent" in msg.lower():
-                            reply, snippets = "（请求过于频繁，请稍等几秒后重发一次）", []
-                        else:
-                            reply, snippets = f"（出错，请重试）{msg[:200]}", []
-                st.markdown(reply)
-                if snippets:
-                    with st.expander(f"引用片段（{len(snippets)} 条）"):
-                        for sn in snippets:
-                            st.markdown(f"**[{sn['chunk_id']}]** {sn['source']}")
-                            st.caption(sn["text"])
+        with st.spinner("智能体思考中…"):
+            try:
+                reply, snippets = chat_with_trace(
+                    get_agent(), st.session_state.thread_id, prompt)
+            except Exception as e:  # noqa: BLE001
+                msg = str(e)
+                if "429" in msg or "frequent" in msg.lower():
+                    reply, snippets = "（请求过于频繁，请稍等几秒后重发一次）", []
+                else:
+                    reply, snippets = f"（出错，请重试）{msg[:200]}", []
+        st.session_state.history.append({"role": "user", "text": prompt, "snippets": []})
         st.session_state.history.append(
             {"role": "assistant", "text": reply, "snippets": snippets})
+        st.rerun()  # 重跑一次，统一从 history 渲染（新消息出现在底部）
 
 # ────────────────────────── 右：抓拍 + 看板 ──────────────────────────
 with right:
@@ -135,16 +128,17 @@ with right:
 
     st.divider()
     st.subheader("车位看板")
-    if st.button("🔄 刷新", use_container_width=True) or True:
-        try:
-            data = httpx.get(f"{MOCK_BASE}/lots/status", timeout=5).json()
-            for a in data["areas"]:
-                ratio = a["free"] / a["total"] if a["total"] else 0
-                st.markdown(f"**{a['area']} 区 · {a['name']}**")
-                st.progress(ratio, text=f"空闲 {a['free']}/{a['total']}")
-            st.caption(f"更新时间：{data['updated_at']}")
-        except Exception as e:  # noqa: BLE001
-            st.warning(f"看板加载失败：{e}")
+    if st.button("🔄 刷新", use_container_width=True):
+        st.rerun()
+    try:
+        data = httpx.get(f"{MOCK_BASE}/lots/status", timeout=5).json()
+        for a in data["areas"]:
+            ratio = a["free"] / a["total"] if a["total"] else 0
+            st.markdown(f"**{a['area']} 区 · {a['name']}**")
+            st.progress(ratio, text=f"空闲 {a['free']}/{a['total']}")
+        st.caption(f"更新时间：{data['updated_at']}")
+    except Exception as e:  # noqa: BLE001
+        st.warning(f"看板加载失败：{e}")
 
     with st.expander("调试工具（演示用）"):
         d1, d2 = st.columns(2)
