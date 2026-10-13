@@ -7,11 +7,11 @@
 > 执行方式（项目根目录）：
 >
 > ```bash
-> .venv/Scripts/python.exe scripts/smoke_mock.py      # 接口冒烟 33 项
+> .venv/Scripts/python.exe scripts/smoke_mock.py      # 接口冒烟 52 项（v1.3 起测试隔离：写 data/mock_smoke.sqlite）
 > .venv/Scripts/python.exe scripts/test_pricing.py    # 计费自测 9 项
 > ```
 >
-> 最近执行：**2026-10-12** → 接口 **ALL PASS（共 33 项）**、计费 **ALL PASS（共 9 项）**。
+> 最近执行：**2026-10-14** → 接口 **ALL PASS（共 52 项）**、计费 **ALL PASS（共 9 项）**。
 > 下表「实际」栏均为脚本真实输出。
 
 ---
@@ -93,7 +93,31 @@
 | TC-Mock-35 | `POST /debug/lots` 超容量 | 400 `INVALID_PARAM` | 一致 | ✓ |
 | TC-Mock-36 | `/debug/reset` 恢复容量与占用 | total=30、free=27 | 一致 | ✓ |
 
-**接口用例合计 40 项，全部通过（`scripts/smoke_mock.py` 复跑）。**
+### 1.8 v1.3 新增：记录库 + 预约占位 + 重启恢复（2026-10-14 补测）
+
+需求方迭代：「要有一个数据库记录进入时间，离开时间，缴费状态（离开默认已缴费）预约情况，
+不然就算进场了也说成没有进场；车位看板在车辆进场时和被预约占用也不会有变化。」
+
+| 用例号 | 操作 | 预期 | 实际 | 通过 |
+|---|---|---|---|---|
+| TC-Mock-40 | `GET /lots/status` | 含 `reserved` 字段（初始 0） | 一致 | ✓ |
+| TC-Mock-41 | 预约 B 区后查看板 | `reserved=1`、`free` −1（60−8−1=51） | 一致 | ✓ |
+| TC-Mock-42 | 预约车 `POST /entry`（不给 area） | 自动进 B 区（预约区）、`reservation_consumed=true` | 一致 | ✓ |
+| TC-Mock-42b | 核销后查看板 | `reserved=0`、`occupied=9`、`free` 仍 51 | 一致 | ✓ |
+| TC-Mock-43 | `GET /records?plate=京B88888` | 票据含进入时间；出场前 `exit_time=null`、`status=active` | 一致 | ✓ |
+| TC-Mock-43b | 同上 | 预约 `status=consumed`（已核销） | 一致 | ✓ |
+| TC-Mock-44 | `POST /exit` | 返回 `paid=true`（离开默认已缴费） | 一致 | ✓ |
+| TC-Mock-44b | 出场后查 `/records` | 离开时间/费用/`paid=1`/`status=closed` 均已落库 | 一致 | ✓ |
+| TC-Mock-45 | 出场后 `GET /vehicle` | `last_visit` 含离开时间/时长/费用/缴费状态 | 一致 | ✓ |
+| TC-Mock-46 | 模拟重启（重建 State + `restore_from_db`）后 `GET /vehicle` | 在场车仍在场（票号/区域一致）——**根治"进场了却说没进场"** | 一致 | ✓ |
+| TC-Mock-46b | 恢复后查看板 | 占用计数一致（A occupied=4） | 一致 | ✓ |
+| TC-Mock-47 | `/debug/reset` | 记录库清空（tickets=[]、reservations=[]） | 一致 | ✓ |
+
+**接口用例合计 52 项，全部通过（`scripts/smoke_mock.py` 复跑）。**
+浏览器端实测（截图 `docs/测试证据/vue-v13-*.png`）：对话让车入场 → 看板 5 秒内自动刷新（27→26）；
+预约 → 看板即时显示"预约保留 1"；"记录"弹窗展示进入/离开时间、4.50 元、已缴费、预约状态；
+重启 mock 服务后 `GET /vehicle` 仍在场；用户问"刚才那笔停车费交了吗"→ Agent 答"已缴费 ✅、
+91 分钟、4.50 元"并主动更正不在场状态。
 
 ---
 
@@ -153,3 +177,6 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
    **A 决定（10-12）**：保留该文件作 A0 阶段证据链，断言改为「虚拟时间注入（10:00→+120min→12.00）」，
    不再依赖 stub 假数据；修正后 **12/12 全绿**。
 4. 本记录即 B7b 定稿版本，覆盖 B1–B6 全部接口 + 计费 + 时钟纪律 + 相机图规格。
+5. **v1.3 记录库（10-14）**：票据/预约落盘 `data/mock.sqlite`（进入时间/离开时间/缴费状态/预约情况），
+   进程重启自动恢复在场与未过期预约；`/debug/reset` 清库回初始。冒烟脚本经 `MOCK_DB` 环境变量
+   写独立库（`data/mock_smoke.sqlite`），与运行中服务互不干扰。

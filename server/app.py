@@ -186,7 +186,11 @@ def _append(conn, user_id: int, role: str, text: str, snippets: list) -> None:
 
 
 def _vehicle_context(user_row) -> str | None:
-    """查 mock 单车状态 → 构造"当前用户车辆"上下文块（注入临时 system prompt）。"""
+    """查 mock 单车状态 → 构造"当前用户车辆"上下文块（注入临时 system prompt）。
+
+    包含在场状态、预约情况、上次停车（离开时间/费用/缴费状态）——来自 mock 落盘记录库，
+    重启不丢；用户问"我缴费了吗/上次停了多久/我有没有预约"直接用本块回答。
+    """
     plate = (user_row["plate"] or "").strip()
     if not plate:
         return None
@@ -211,6 +215,17 @@ def _vehicle_context(user_row) -> str | None:
             lines.append(f"票据号：{v['ticket_id']}")
     else:
         lines.append("状态：**不在场**（当前未入场）")
+    rsv = v.get("reservation")
+    if rsv:
+        lines.append(f"预约情况：已预约 {rsv.get('area') or '系统分配'} 区"
+                     f"，保留至 {rsv['keep_until']}（未过期，入场可核销）")
+    last = v.get("last_visit")
+    if last:
+        paid_txt = "已缴费" if last.get("paid") else "未缴费"
+        fee = last.get("fee")
+        fee_txt = f"{fee:.2f} 元" if isinstance(fee, (int, float)) else "—"
+        lines.append(f"上次停车：{last['exit_time']} 离场｜"
+                     f"时长 {last['duration_min']} 分钟｜费用 {fee_txt}｜{paid_txt}")
     return "\n".join(lines)
 
 
@@ -310,6 +325,13 @@ def _mock(method: str, path: str, payload: dict | None = None):
 @app.get("/api/lots")
 def lots():
     return _mock("GET", "/lots/status")
+
+
+@app.get("/api/records")
+def records(plate: str | None = None, limit: int = 20):
+    """进出场 / 缴费 / 预约 留痕查询（透传 mock 落盘记录库）。"""
+    qs = f"?limit={limit}" + (f"&plate={plate}" if plate else "")
+    return _mock("GET", f"/records{qs}")
 
 
 class LotsDebugReq(BaseModel):

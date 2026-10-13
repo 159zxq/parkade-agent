@@ -4,14 +4,21 @@
 断言关键字段与状态变化，末尾打印 `ALL PASS（共 N 项）`。
 
 运行（项目根目录）：python scripts/smoke_mock.py
+测试隔离：默认写独立库 data/mock_smoke.sqlite（MOCK_DB 可覆盖），
+不影响运行中服务的 data/mock.sqlite。
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+# 独立记录库：必须在 import mock_service 之前设置（db 模块导入时读取）
+os.environ.setdefault("MOCK_DB", str(ROOT / "data" / "mock_smoke.sqlite"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -176,6 +183,68 @@ def main() -> int:
     client.post("/debug/reset")
     check("TC-Mock-36 reset 恢复容量与占用",
           client.get("/lots/status?area=A").json()["areas"][0]["total"] == 30)
+
+    # 16) 记录库 + 预约占位（契约 v1.3）
+    client.post("/debug/reset")
+    a0 = client.get("/lots/status?area=A").json()["areas"][0]
+    check("TC-Mock-40 看板含 reserved 字段（初始 0）",
+          a0.get("reserved") == 0, str(a0))
+    r = client.post("/reserve", json={"plate": "京B88888",
+                                      "reserve_time": "2026-11-10T18:00:00", "area": "B"})
+    b1 = client.get("/lots/status?area=B").json()["areas"][0]
+    check("TC-Mock-41 预约后在 B 区占位（reserved=1、free−1）",
+          r.json()["ok"] and b1["reserved"] == 1 and b1["free"] == 51, str(b1))
+    r = client.post("/entry", json={"plate": "京B88888"})
+    body = r.json()
+    b2 = client.get("/lots/status?area=B").json()["areas"][0]
+    check("TC-Mock-42 预约车入场默认进预约区且核销预约",
+          body["area"] == "B" and body["reservation_consumed"] is True, str(body))
+    check("TC-Mock-42b 核销后 reserved=0、占用 +1（free 不变）",
+          b2["reserved"] == 0 and b2["occupied"] == 9 and b2["free"] == 51, str(b2))
+
+    r = client.get("/records?plate=京B88888")
+    body = r.json()
+    t = body["tickets"][0]
+    check("TC-Mock-43 /records 票据含进入时间（离开为空=在场）",
+          r.status_code == 200 and t["plate"] == "京B88888" and t["entry_time"]
+          and t["exit_time"] is None and t["status"] == "active", str(t))
+    check("TC-Mock-43b /records 预约已核销（status=consumed）",
+          body["reservations"][0]["status"] == "consumed", str(body["reservations"][0]))
+
+    client.post("/debug/time", json={"offset_minutes": 60})
+    r = client.post("/exit", json={"plate": "京B88888"})
+    check("TC-Mock-44 出场返回 paid=true（离开默认已缴费）", r.json()["paid"] is True, str(r.json()))
+    t = client.get("/records?plate=京B88888").json()["tickets"][0]
+    check("TC-Mock-44b 出场落库：离开时间/费用/已缴费/closed",
+          t["exit_time"] and t["fee"] == r.json()["total"] and t["paid"] is True
+          and t["status"] == "closed", str(t))
+
+    v = client.get("/vehicle/京B88888").json()
+    check("TC-Mock-45 /vehicle 含 last_visit（离开时间/费用/缴费）",
+          v["inside"] is False and v["last_visit"] and v["last_visit"]["paid"] is True
+          and v["last_visit"]["exit_time"], str(v))
+
+    # 17) 重启恢复：同一数据库文件重建 State（模拟进程重启）
+    import mock_service.state as _st
+    from mock_service.db import MockDB, db as _db
+
+    client.post("/debug/reset")
+    client.post("/entry", json={"plate": "京A12345", "camera_id": "cam-1"})
+    t_before = client.get("/records?plate=京A12345").json()["tickets"][0]
+    _st.state.reset()
+    _st.state.restore_from_db()
+    v = client.get("/vehicle/京A12345").json()
+    check("TC-Mock-46 模拟重启后在场车自动恢复（不再'说成没进场'）",
+          v["inside"] is True and v["area"] == "A"
+          and v["ticket_id"] == t_before["ticket_id"], str(v))
+    check("TC-Mock-46b 恢复后看板占用一致（A occupied=4）",
+          client.get("/lots/status?area=A").json()["areas"][0]["occupied"] == 4)
+
+    # 18) reset 清空记录库
+    client.post("/debug/reset")
+    check("TC-Mock-47 reset 清空记录库",
+          client.get("/records").json()["tickets"] == []
+          and client.get("/records").json()["reservations"] == [])
 
     print(f"\n{'ALL PASS' if not _fails else f'{len(_fails)} 项失败: {_fails}'}（共 {_count} 项）")
     return 1 if _fails else 0

@@ -119,20 +119,28 @@
         <section class="card">
           <div class="card-title">
             <span class="t"><el-icon><DataLine /></el-icon>车位看板</span>
-            <el-button size="small" :icon="Setting" @click="openBoardDebug">调试</el-button>
+            <span>
+              <el-button size="small" :icon="Tickets" @click="openRecords">记录</el-button>
+              <el-button size="small" :icon="Setting" @click="openBoardDebug">调试</el-button>
+            </span>
           </div>
           <div class="board-body">
             <div v-for="a in lots" :key="a.area" class="area-row">
               <div class="area-head">
                 <span class="name">{{ a.area }} 区 · {{ a.name }}</span>
-                <span>空闲 <b style="color: var(--brand)">{{ a.free }}</b> / {{ a.total }}</span>
+                <span>
+                  空闲 <b style="color: var(--brand)">{{ a.free }}</b> / {{ a.total }}
+                  <el-tag v-if="a.reserved" size="small" type="warning" effect="plain" style="margin-left: 6px">
+                    预约保留 {{ a.reserved }}
+                  </el-tag>
+                </span>
               </div>
               <el-progress :percentage="a.total ? Math.round(a.free / a.total * 100) : 0"
                            :stroke-width="12" :show-text="false"
                            :color="a.free === 0 ? '#ef4444' : a.free / a.total < 0.2 ? '#f59e0b' : '#3b82f6'" />
             </div>
             <div style="font-size: 12px; color: var(--muted); text-align: right">
-              更新时间：{{ lotsUpdated }}
+              更新时间：{{ lotsUpdated }}（自动刷新）
             </div>
           </div>
           <div class="board-foot">
@@ -196,17 +204,72 @@
         </div>
       </div>
       <template #footer>
-        <el-button type="danger" plain @click="resetAll">全部复位（车位+票据+时间）</el-button>
+        <el-button type="danger" plain @click="resetAll">全部复位（车位+票据+记录+时间）</el-button>
         <el-button type="primary" @click="boardDebugDialog = false">完成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 进出场 / 缴费 / 预约 记录 -->
+    <el-dialog v-model="recordsDialog" title="进出场记录（落盘数据库）" width="720px" top="6vh">
+      <div class="dialog-section">
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px">
+          <el-select v-model="recordsPlate" clearable placeholder="全部车牌" style="width: 220px"
+                     @change="loadRecords">
+            <el-option v-for="u in users" :key="u.id" :value="u.plate" :label="`${u.plate}（${u.name}）`" />
+          </el-select>
+          <el-button type="primary" size="small" :icon="Refresh" @click="loadRecords">刷新</el-button>
+          <span style="font-size: 12px; color: var(--muted)">
+            进入时间/离开时间/缴费状态（离开默认已缴费）——来自 mock 落盘库，重启不丢
+          </span>
+        </div>
+        <h4>票据（进入 / 离开 / 缴费）</h4>
+        <el-table :data="records.tickets" size="small" max-height="260">
+          <el-table-column prop="ticket_id" label="票号" width="82" />
+          <el-table-column prop="plate" label="车牌" width="106" />
+          <el-table-column prop="area" label="区" width="44" />
+          <el-table-column prop="entry_time" label="进入时间" width="152" />
+          <el-table-column prop="exit_time" label="离开时间" width="152">
+            <template #default="{ row }">{{ row.exit_time || '在场中' }}</template>
+          </el-table-column>
+          <el-table-column label="费用" width="76">
+            <template #default="{ row }">{{ row.fee == null ? '—' : row.fee.toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column label="缴费" width="86">
+            <template #default="{ row }">
+              <el-tag v-if="row.status === 'active'" size="small" type="info" effect="plain">在场</el-tag>
+              <el-tag v-else-if="row.paid" size="small" type="success" effect="plain">已缴费</el-tag>
+              <el-tag v-else size="small" type="warning" effect="plain">未缴费</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+        <h4 style="margin-top: 14px">预约</h4>
+        <el-table :data="records.reservations" size="small" max-height="180">
+          <el-table-column prop="reserve_id" label="预约号" width="82" />
+          <el-table-column prop="plate" label="车牌" width="106" />
+          <el-table-column prop="area" label="区" width="44" />
+          <el-table-column prop="reserve_time" label="预约时间" width="152" />
+          <el-table-column prop="keep_until" label="保留至" width="152" />
+          <el-table-column label="状态">
+            <template #default="{ row }">
+              <el-tag :type="{ active: 'success', consumed: 'primary', expired: 'info' }[row.status]"
+                      size="small" effect="plain">
+                {{ { active: '有效', consumed: '已核销', expired: '已过期' }[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="recordsDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, ChatDotRound, Promotion, Loading, Camera, UploadFilled, DataLine, Setting, Refresh, User } from '@element-plus/icons-vue'
+import { Plus, Delete, ChatDotRound, Promotion, Loading, Camera, UploadFilled, DataLine, Setting, Refresh, User, Tickets } from '@element-plus/icons-vue'
 import api from './api'
 
 const CAMERAS = { 'cam-1': 'A 区入口', 'cam-2': 'B 区入口', 'cam-3': 'C 区入口', 'cam-4': '出口' }
@@ -224,6 +287,7 @@ const currentUser = ref(null)
 const addUserDialog = ref(false)
 const newUserName = ref('')
 const newUserPlate = ref('')
+let timer = null
 
 async function loadUsers() {
   const { data } = await api.get('/users')
@@ -308,6 +372,7 @@ async function send() {
   } finally {
     chatting.value = false
     await scrollBottom()
+    loadLots()   // 对话中可能发生入场/预约/出场 → 看板即时同步
   }
 }
 
@@ -360,6 +425,30 @@ const health = reactive({ mock: true, virtualTime: '', realTime: '' })
 const boardDebugDialog = ref(false)
 const debugForm = reactive({})
 const debugTime = ref(null)
+
+// ── 记录（进出场/缴费/预约，来自 mock 落盘库）──
+const recordsDialog = ref(false)
+const recordsPlate = ref('')
+const records = reactive({ tickets: [], reservations: [] })
+
+async function loadRecords() {
+  try {
+    const params = { limit: 30 }
+    if (recordsPlate.value) params.plate = recordsPlate.value
+    const { data } = await api.get('/records', { params })
+    if (data.ok) {
+      records.tickets = data.tickets
+      records.reservations = data.reservations
+    }
+  } catch {
+    ElMessage.error('记录查询失败（Mock 服务不可达？）')
+  }
+}
+
+async function openRecords() {
+  await loadRecords()
+  recordsDialog.value = true
+}
 
 async function loadLots() {
   try {
@@ -438,6 +527,9 @@ async function resetAll() {
 onMounted(async () => {
   await loadUsers()
   await loadLots()
-  setInterval(loadHealth, 15000)
+  // 看板 5 秒轮询（loadLots 内含 loadHealth）：Agent 对话里入场/预约、相机链路状态变化都会实时反映
+  timer = setInterval(loadLots, 5000)
 })
+
+onUnmounted(() => clearInterval(timer))
 </script>

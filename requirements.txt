@@ -18,4 +18,3 @@ opencv-python
 onnxruntime
 hyperlpr3
 
-streamlit

@@ -9,10 +9,16 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+# 独立记录库：必须在 import mock_service 之前设置（db 模块导入时读取），
+# 避免与运行中服务的 data/mock.sqlite 互相污染
+os.environ.setdefault("MOCK_DB", str(ROOT / "data" / "mock_stub.sqlite"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
