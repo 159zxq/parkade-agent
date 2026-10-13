@@ -26,9 +26,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 RAG_K = 3
 TOP_N_CHARS = 1800  # 注入正文上限（防止撑爆上下文）
+SHORT_QUERY_CHARS = 15  # 当前问句短于此长度时，拼接上一轮用户消息一起检索
 
 
 def _last_human_text(messages: list) -> str:
+    """取 messages 中最后一条 HumanMessage 的文本（兼容 content 为 str 或块列表）。"""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             content = msg.content
@@ -38,6 +40,28 @@ def _last_human_text(messages: list) -> str:
                      if isinstance(b, dict) and b.get("type") == "text"]
             return "\n".join(p for p in parts if p).strip()
     return ""
+
+
+def _recent_human_text(messages: list) -> str:
+    """构造检索 query。
+
+    多轮场景：像"晚上呢？""那它一天封顶多少？"这类**极短追问**自身不含
+    检索线索（实测：'晚上呢？'→ 检索不到 3.3 夜间费率；'那中型车呢？ 晚上呢？'
+    → 3.3-01 直达）。故当前句 < SHORT_QUERY_CHARS 时，拼接上一条用户消息
+    一起检索（多轮语境化检索）。
+    """
+    humans: list[str] = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            t = _last_human_text([msg])
+            if t:
+                humans.append(t)
+    if not humans:
+        return ""
+    current = humans[-1]
+    if len(current) < SHORT_QUERY_CHARS and len(humans) >= 2:
+        return f"{humans[-2]} {current}"
+    return current
 
 
 def format_context(hits: list[dict]) -> str:
@@ -78,7 +102,7 @@ class RagContextMiddleware(AgentMiddleware):
         return getattr(self._local, "error", None)
 
     def wrap_model_call(self, request: ModelRequest, handler: Callable):
-        query = _last_human_text(list(request.messages))
+        query = _recent_human_text(list(request.messages))
         hits: list[dict] = []
         error: str | None = None
         if query:
