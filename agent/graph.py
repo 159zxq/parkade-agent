@@ -81,6 +81,28 @@ def chat_with_trace(agent, thread_id: str, message: str) -> tuple[str, list[dict
     return text, snippets
 
 
+def chat_with_context(agent, thread_id: str, message: str,
+                      extra_context: str | None = None) -> tuple[str, list[dict]]:
+    """带附加上下文的对话（如当前用户的车辆状态块）。
+
+    extra_context 注入在临时 system prompt 层（不写入历史）；RAG 检索仍用
+    用户真实问题（不拼上下文，避免污染检索语义，见 rag_middleware 说明）。
+    """
+    config = {"configurable": {"thread_id": thread_id}}
+    context = {"user_context": extra_context} if extra_context else None
+    if _rag_middleware is not None:
+        _rag_middleware.set_user_context(extra_context)
+    try:
+        result = agent.invoke({"messages": [{"role": "user", "content": message}]},
+                              config=config, context=context)
+    finally:
+        if _rag_middleware is not None:
+            _rag_middleware.set_user_context(None)
+    text = _content_to_text(result["messages"][-1].content)
+    snippets = _rag_middleware.last_hits if _rag_middleware is not None else []
+    return text, snippets
+
+
 def chat(agent, thread_id: str, message: str) -> str:
     """发一条消息，返回最终文本回复。"""
     return chat_with_trace(agent, thread_id, message)[0]

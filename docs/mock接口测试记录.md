@@ -81,7 +81,19 @@
 | TC-Mock-10b | 预约号 | `R-0001`（递增） | `R-0001` | ✓ |
 | TC-Mock-11 | 同车牌重复预约 | 400 `RESERVE_CONFLICT` | 400 `RESERVE_CONFLICT` | ✓ |
 
-**接口用例合计 33 项，全部通过。**
+### 1.7 v1.1/v1.2 新增接口（看板调试 + 单车查询，2026-10-14 补测）
+
+| 用例号 | 操作 | 预期 | 实际 | 通过 |
+|---|---|---|---|---|
+| TC-Mock-30 | `GET /vehicle/京A12345`（未入场） | `inside:false` | 一致 | ✓ |
+| TC-Mock-31 | 入场 +90 分钟后 `GET /vehicle` | `inside:true`、duration=90、entry=虚拟时间 | 一致 | ✓ |
+| TC-Mock-32 | `GET /vehicle/abc`（任意车牌） | 200、`inside:false`（不 404） | 一致 | ✓ |
+| TC-Mock-33 | `POST /debug/lots` 改总车位（30→50） | total=50 | 50 | ✓ |
+| TC-Mock-34 | `POST /debug/lots` 改占用（→45） | occupied=45、free=5 | 一致 | ✓ |
+| TC-Mock-35 | `POST /debug/lots` 超容量 | 400 `INVALID_PARAM` | 一致 | ✓ |
+| TC-Mock-36 | `/debug/reset` 恢复容量与占用 | total=30、free=27 | 一致 | ✓ |
+
+**接口用例合计 40 项，全部通过（`scripts/smoke_mock.py` 复跑）。**
 
 ---
 

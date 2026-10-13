@@ -89,7 +89,10 @@ html, body, #app {
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-weight: 600; flex: none;
 }
-.user-item .uname { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-item .uname { flex: 1; font-size: 14px; overflow: hidden; }
+.user-item .uname > div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-item .uplate { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.user-item.active .uplate { color: var(--brand-deep); }
 .user-item .del { color: #cbd5e1; }
 .user-item .del:hover { color: #ef4444; }
 

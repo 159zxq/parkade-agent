@@ -184,6 +184,28 @@ def truth(camera_id: str, variant: str = "normal"):
 
 
 # ---------------------------------------------------------------------------
+# 单车查询（契约 v1.2）：用户车辆是否在场 / 入场时间 / 已停时长
+# ---------------------------------------------------------------------------
+@app.get("/vehicle/{plate}")
+def vehicle_status(plate: str):
+    p = normalize_plate(plate)
+    area = state.occupied.get(p)
+    ticket = state.tickets.get(p)
+    if area is None:
+        return {"ok": True, "plate": p, "inside": False, "area": None,
+                "vehicle_type": None, "ticket_id": None, "entry_time": None,
+                "duration_min": None, "queried_at": clock.now().strftime(FMT)}
+    duration = None
+    if ticket is not None:
+        duration = int((clock.now() - ticket.entry_time).total_seconds() // 60)
+    return {"ok": True, "plate": p, "inside": True, "area": area,
+            "vehicle_type": ticket.vehicle_type if ticket else DEFAULT_VEHICLE_TYPE,
+            "ticket_id": ticket.ticket_id if ticket else None,
+            "entry_time": ticket.entry_time.strftime(FMT) if ticket else None,
+            "duration_min": duration, "queried_at": clock.now().strftime(FMT)}
+
+
+# ---------------------------------------------------------------------------
 # B4 — 时钟与状态调试
 # ---------------------------------------------------------------------------
 @app.get("/debug/time")

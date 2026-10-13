@@ -147,6 +147,36 @@ def main() -> int:
     check("TC-Mock-17 reset 后恢复初始 A.free=27",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 27)
 
+    # 14) 单车查询 /vehicle（契约 v1.2）
+    r = client.get("/vehicle/京A12345")
+    body = r.json()
+    check("TC-Mock-30 /vehicle 不在场 inside=false",
+          r.status_code == 200 and body["inside"] is False and body["plate"] == "京A12345", str(body))
+    client.post("/debug/time", json={"set": "2026-11-10T10:00:00"})
+    client.post("/entry", json={"plate": "京A12345", "camera_id": "cam-1"})
+    client.post("/debug/time", json={"offset_minutes": 90})
+    r = client.get("/vehicle/京A12345")
+    body = r.json()
+    check("TC-Mock-31 /vehicle 在场含时长（90 分钟）",
+          body["inside"] is True and body["duration_min"] == 90
+          and body["entry_time"] == "2026-11-10T10:00:00" and body["area"] == "A", str(body))
+    r = client.get("/vehicle/abc")
+    check("TC-Mock-32 /vehicle 任意车牌不报错（不在场）",
+          r.status_code == 200 and r.json()["inside"] is False, str(r.json()))
+    client.post("/debug/reset")
+
+    # 15) 看板调试 /debug/lots（契约 v1.1）
+    r = client.post("/debug/lots", json={"area": "A", "total": 50})
+    check("TC-Mock-33 /debug/lots 改总车位", r.json()["total"] == 50, str(r.json()))
+    r = client.post("/debug/lots", json={"area": "A", "occupied": 45})
+    check("TC-Mock-34 /debug/lots 改占用", r.json()["occupied"] == 45 and r.json()["free"] == 5, str(r.json()))
+    r = client.post("/debug/lots", json={"area": "A", "occupied": 99})
+    check("TC-Mock-35 超容量 400 INVALID_PARAM",
+          r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM", str(r.json()))
+    client.post("/debug/reset")
+    check("TC-Mock-36 reset 恢复容量与占用",
+          client.get("/lots/status?area=A").json()["areas"][0]["total"] == 30)
+
     print(f"\n{'ALL PASS' if not _fails else f'{len(_fails)} 项失败: {_fails}'}（共 {_count} 项）")
     return 1 if _fails else 0
 

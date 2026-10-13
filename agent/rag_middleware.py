@@ -86,7 +86,12 @@ def _message_text(msg) -> str:
 
 
 class RagContextMiddleware(AgentMiddleware):
-    """对话前检索 + 注入。取证经线程局部存储：`last_hits` / `last_error`。"""
+    """对话前检索 + 注入。取证经线程局部存储：`last_hits` / `last_error`。
+
+    另支持"用户上下文块"（user_context）：server 层在调用前 set_user_context()
+    传入（如当前用户车辆的在场状态），中间件把它与规章片段一起拼进临时
+    system prompt（不写入历史）。RAG 检索 **只用用户真实问题**，不拼上下文块。
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -101,6 +106,9 @@ class RagContextMiddleware(AgentMiddleware):
     def last_error(self) -> str | None:
         return getattr(self._local, "error", None)
 
+    def set_user_context(self, text: str | None) -> None:
+        self._local.user_context = text
+
     def wrap_model_call(self, request: ModelRequest, handler: Callable):
         query = _recent_human_text(list(request.messages))
         hits: list[dict] = []
@@ -113,12 +121,17 @@ class RagContextMiddleware(AgentMiddleware):
             except Exception as e:  # noqa: BLE001  库未建/服务未启用 → 静默跳过
                 error = str(e)
 
+        blocks: list[str] = []
+        user_ctx = getattr(self._local, "user_context", None)
+        if user_ctx:
+            blocks.append(user_ctx)
         if hits:
+            blocks.append(format_context(hits))
+        if blocks:
             # 注意：SystemMessage + SystemMessage 在 langchain-core 1.x 会返回
             # ChatPromptTemplate（类型错误），必须手工拼文本后新建 SystemMessage
-            rag_text = format_context(hits)
             base_text = _message_text(request.system_message) if request.system_message else ""
-            combined = f"{base_text}\n\n{rag_text}" if base_text else rag_text
+            combined = "\n\n".join([base_text, *blocks]) if base_text else "\n\n".join(blocks)
             request = request.override(system_message=SystemMessage(content=combined))
 
         # 取证：写入线程局部存储（写消息 metadata 实测不可靠，见模块 docstring）

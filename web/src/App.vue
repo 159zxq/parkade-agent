@@ -22,7 +22,10 @@
           <div v-for="u in users" :key="u.id" class="user-item"
                :class="{ active: u.id === currentUser?.id }" @click="switchUser(u)">
             <div class="avatar">{{ u.name.slice(0, 1) }}</div>
-            <span class="uname">{{ u.name }}</span>
+            <div class="uname">
+              <div>{{ u.name }}</div>
+              <div class="uplate">{{ u.plate || '未登记车牌' }}</div>
+            </div>
             <el-icon class="del" @click.stop="removeUser(u)"><Delete /></el-icon>
           </div>
         </div>
@@ -34,6 +37,9 @@
           <span class="t">
             <el-icon><ChatDotRound /></el-icon>
             对话{{ currentUser ? ` · ${currentUser.name}` : '' }}
+            <el-tag v-if="currentUser?.plate" size="small" type="info" effect="plain">
+              {{ currentUser.plate }}
+            </el-tag>
           </span>
           <el-button size="small" text type="danger" :icon="Delete" @click="clearChat">清空对话</el-button>
         </div>
@@ -139,9 +145,19 @@
     </main>
 
     <!-- 添加用户 -->
-    <el-dialog v-model="addUserDialog" title="添加用户" width="380px">
-      <el-input v-model="newUserName" placeholder="输入用户名" maxlength="20"
-                @keyup.enter="confirmAddUser" />
+    <el-dialog v-model="addUserDialog" title="添加用户" width="420px">
+      <el-form label-width="68px">
+        <el-form-item label="用户名" required>
+          <el-input v-model="newUserName" placeholder="输入用户名" maxlength="20" />
+        </el-form-item>
+        <el-form-item label="车牌号" required>
+          <el-input v-model="newUserPlate" placeholder="如 京A12345（用于判断车辆是否在场）"
+                    maxlength="10" @keyup.enter="confirmAddUser" />
+        </el-form-item>
+      </el-form>
+      <div style="font-size: 12px; color: var(--muted); margin-top: -8px; padding-left: 68px">
+        系统会以此车牌实时查询车辆是否在场、已停多久
+      </div>
       <template #footer>
         <el-button @click="addUserDialog = false">取消</el-button>
         <el-button type="primary" @click="confirmAddUser">添加</el-button>
@@ -207,12 +223,17 @@ const users = ref([])
 const currentUser = ref(null)
 const addUserDialog = ref(false)
 const newUserName = ref('')
+const newUserPlate = ref('')
 
 async function loadUsers() {
   const { data } = await api.get('/users')
   users.value = data.users
   if (!currentUser.value && users.value.length) {
     switchUser(users.value[0])
+  } else if (currentUser.value) {
+    // 保持当前选择（刷新列表后同步最新字段）
+    const again = users.value.find(x => x.id === currentUser.value.id)
+    if (again) currentUser.value = again
   }
 }
 
@@ -221,14 +242,20 @@ async function switchUser(u) {
   await loadMessages()
 }
 
+const PLATE_RE = /^[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-HJ-NP-Z][A-HJ-NP-Z0-9]{4,6}$/
+
 async function confirmAddUser() {
   const name = newUserName.value.trim()
+  const plate = newUserPlate.value.replace(/\s/g, '').toUpperCase()
   if (!name) return ElMessage.warning('请输入用户名')
+  if (!plate) return ElMessage.warning('必须填写车牌号（用于判断车辆是否在场）')
+  if (!PLATE_RE.test(plate)) return ElMessage.warning('车牌格式不正确，示例：京A12345')
   try {
-    const { data } = await api.post('/users', { name })
-    ElMessage.success(`已添加用户「${name}」`)
+    const { data } = await api.post('/users', { name, plate })
+    ElMessage.success(`已添加用户「${name}」（车牌 ${plate}）`)
     addUserDialog.value = false
     newUserName.value = ''
+    newUserPlate.value = ''
     await loadUsers()
     const created = users.value.find(x => x.id === data.user.id)
     if (created) await switchUser(created)

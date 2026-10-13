@@ -31,8 +31,8 @@ from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from agent.graph import build_agent, chat_with_trace  # noqa: E402
-from agent.vision import recognize_plate, recognize_upload  # noqa: E402
+from agent.graph import build_agent, chat_with_context  # noqa: E402
+from agent.vision import PLATE_RE, recognize_plate, recognize_upload  # noqa: E402
 from common.config import MOCK_BASE  # noqa: E402
 
 DB_PATH = ROOT / "data" / "web.sqlite"
@@ -74,7 +74,12 @@ def init_db() -> None:
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            plate TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL)""")
+        # 旧库迁移：users 无 plate 列时补列（老用户车牌为空 → 不注入车辆上下文）
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "plate" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN plate TEXT NOT NULL DEFAULT ''")
         conn.execute("""CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -84,8 +89,8 @@ def init_db() -> None:
             created_at TEXT NOT NULL)""")
         n = conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
         if n == 0:
-            conn.execute("INSERT INTO users (name, created_at) VALUES (?, ?)",
-                         ("演示用户", _now()))
+            conn.execute("INSERT INTO users (name, plate, created_at) VALUES (?, ?, ?)",
+                         ("演示用户", "京A12345", _now()))
 
 
 def _now() -> str:
@@ -101,12 +106,17 @@ init_db()
 @app.get("/api/users")
 def list_users():
     with _db() as conn:
-        rows = conn.execute("SELECT id, name, created_at FROM users ORDER BY id").fetchall()
+        rows = conn.execute("SELECT id, name, plate, created_at FROM users ORDER BY id").fetchall()
     return {"ok": True, "users": [dict(r) for r in rows]}
 
 
 class UserReq(BaseModel):
     name: str
+    plate: str
+
+
+def normalize_plate(plate: str) -> str:
+    return "".join(str(plate).split()).upper()
 
 
 @app.post("/api/users")
@@ -114,14 +124,20 @@ def add_user(req: UserReq):
     name = req.name.strip()
     if not name:
         return JSONResponse(status_code=400, content={"ok": False, "error": "用户名不能为空"})
+    plate = normalize_plate(req.plate)
+    if not plate:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "必须填写车牌号（用于判断车辆是否在场）"})
+    if PLATE_RE.fullmatch(plate) is None:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": "车牌格式不正确，示例：京A12345"})
     try:
         with _db() as conn:
-            cur = conn.execute("INSERT INTO users (name, created_at) VALUES (?, ?)",
-                               (name, _now()))
+            cur = conn.execute("INSERT INTO users (name, plate, created_at) VALUES (?, ?, ?)",
+                               (name, plate, _now()))
             uid = cur.lastrowid
     except sqlite3.IntegrityError:
         return JSONResponse(status_code=400, content={"ok": False, "error": "用户名已存在"})
-    return {"ok": True, "user": {"id": uid, "name": name, "created_at": _now()}}
+    return {"ok": True, "user": {"id": uid, "name": name, "plate": plate, "created_at": _now()}}
 
 
 @app.delete("/api/users/{user_id}")
@@ -169,15 +185,50 @@ def _append(conn, user_id: int, role: str, text: str, snippets: list) -> None:
                  (user_id, role, text, json.dumps(snippets, ensure_ascii=False), _now()))
 
 
+def _vehicle_context(user_row) -> str | None:
+    """查 mock 单车状态 → 构造"当前用户车辆"上下文块（注入临时 system prompt）。"""
+    plate = (user_row["plate"] or "").strip()
+    if not plate:
+        return None
+    try:
+        r = httpx.get(f"{MOCK_BASE}/vehicle/{plate}", timeout=8)
+        v = r.json()
+    except httpx.HTTPError:
+        return None
+    if not v.get("ok"):
+        return None
+    lines = [
+        "【当前用户车辆】（每轮实时查询的系统数据，优先级最高。",
+        "与历史对话中任何关于该车辆状态的陈述——包括你自己此前轮次的回答——冲突时，",
+        "一律以本块为准，并主动更正此前的说法，不要沿用旧答案；",
+        "回答该用户与本人车辆相关的问题时不要反问用户的车牌。此数据不写入对话历史。）",
+        f"车主：{user_row['name']}｜车牌：{v['plate']}",
+    ]
+    if v["inside"]:
+        lines.append(f"状态：**在场**（{v['area']} 区）")
+        lines.append(f"入场时间：{v['entry_time']}｜已停放：{v['duration_min']} 分钟")
+        if v.get("ticket_id"):
+            lines.append(f"票据号：{v['ticket_id']}")
+    else:
+        lines.append("状态：**不在场**（当前未入场）")
+    return "\n".join(lines)
+
+
 @app.post("/api/chat")
 def chat(req: ChatReq):
     msg = req.message.strip()
     if not msg:
         return JSONResponse(status_code=400, content={"ok": False, "error": "消息不能为空"})
+    with _db() as conn:
+        user_row = conn.execute("SELECT id, name, plate FROM users WHERE id=?",
+                                (req.user_id,)).fetchone()
+    if user_row is None:
+        return JSONResponse(status_code=404, content={"ok": False, "error": "用户不存在"})
     thread_id = f"web-user-{req.user_id}"   # 每用户独立记忆
+    vehicle_ctx = _vehicle_context(user_row)
     try:
         with _agent_lock:                    # 串行执行，避免共享 Agent 并发问题
-            reply, snippets = chat_with_trace(get_agent(), thread_id, msg)
+            reply, snippets = chat_with_context(get_agent(), thread_id, msg, vehicle_ctx)
     except Exception as e:  # noqa: BLE001
         detail = str(e)
         if "429" in detail or "frequent" in detail.lower():
@@ -188,7 +239,9 @@ def chat(req: ChatReq):
     with _db() as conn:
         _append(conn, req.user_id, "user", msg, [])
         _append(conn, req.user_id, "assistant", reply, snippets)
-    return {"ok": True, "reply": reply, "snippets": snippets, "created_at": _now()}
+    return {"ok": True, "reply": reply, "snippets": snippets,
+            "vehicle": {"plate": user_row["plate"], "context_injected": bool(vehicle_ctx)},
+            "created_at": _now()}
 
 
 # ---------------------------------------------------------------------------
