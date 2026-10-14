@@ -188,8 +188,8 @@ def _append(conn, user_id: int, role: str, text: str, snippets: list) -> None:
 def _vehicle_context(user_row) -> str | None:
     """查 mock 单车状态 → 构造"当前用户车辆"上下文块（注入临时 system prompt）。
 
-    包含在场状态、预约情况、上次停车（离开时间/费用/缴费状态）——来自 mock 落盘记录库，
-    重启不丢；用户问"我缴费了吗/上次停了多久/我有没有预约"直接用本块回答。
+    面向车主：包含本人车辆在场状态/所在区域（仅供本人查询自己车辆）、月卡、
+    预约情况、上次停车（离开时间/费用/缴费状态）——来自 mock 落盘记录库，重启不丢。
     """
     plate = (user_row["plate"] or "").strip()
     if not plate:
@@ -203,25 +203,28 @@ def _vehicle_context(user_row) -> str | None:
         return None
     lines = [
         "【当前用户车辆】（每轮实时查询的系统数据，优先级最高。",
+        "这是**车主本人**的车辆档案数据，仅用于回答车主询问自己车辆的情况；",
         "与历史对话中任何关于该车辆状态的陈述——包括你自己此前轮次的回答——冲突时，",
         "一律以本块为准，并主动更正此前的说法，不要沿用旧答案；",
         "回答该用户与本人车辆相关的问题时不要反问用户的车牌。此数据不写入对话历史。）",
         f"车主：{user_row['name']}｜车牌：{v['plate']}",
     ]
     if v["inside"]:
-        lines.append(f"状态：**在场**（{v['area']} 区）")
+        lines.append(f"状态：**在场**（停在 {v['area']} 区）")
         lines.append(f"入场时间：{v['entry_time']}｜已停放：{v['duration_min']} 分钟")
         if v.get("ticket_id"):
             lines.append(f"票据号：{v['ticket_id']}")
     else:
         lines.append("状态：**不在场**（当前未入场）")
+    monthly = v.get("monthly")
+    if monthly:
+        lines.append(f"月卡：**生效中**（有效至 {monthly['valid_until']}，出场免计费）")
+    else:
+        lines.append("月卡：无生效中的月卡（如需办理可咨询月卡价格与渠道）")
     rsv = v.get("reservation")
     if rsv:
         lines.append(f"预约情况：已预约 {rsv.get('area') or '系统分配'} 区"
                      f"，保留至 {rsv['keep_until']}（未过期，入场可核销）")
-    prepaid = v.get("prepaid_total")
-    if prepaid:
-        lines.append(f"缴费情况：预缴中 **{prepaid:.2f} 元**（出场自动冲抵，无需再付）")
     last = v.get("last_visit")
     if last:
         paid_txt = "已缴费" if last.get("paid") else "未缴费"
@@ -410,15 +413,16 @@ def records(plate: str | None = None, limit: int = 20):
 
 class PayReq(BaseModel):
     plate: str
-    amount: float | None = None   # 不传：在场车按当前出场费预缴；不在场需指定金额
+    type: str = "spot"               # spot=现缴（当场结清出场费）/ monthly=月卡
+    vehicle_type: str | None = None  # 仅月卡用
 
 
 @app.post("/api/pay")
 def pay(req: PayReq):
-    """缴费通道（模拟车主给车牌缴费，预缴出场自动冲抵；透传 mock /pay）。"""
-    payload = {"plate": req.plate.strip().upper()}
-    if req.amount is not None:
-        payload["amount"] = req.amount
+    """缴费（现缴 spot / 月卡 monthly；透传 mock /pay）。"""
+    payload = {"plate": req.plate.strip().upper(), "type": req.type}
+    if req.vehicle_type:
+        payload["vehicle_type"] = req.vehicle_type
     return _mock("POST", "/pay", payload)
 
 

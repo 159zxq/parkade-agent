@@ -75,14 +75,14 @@ class Reservation:
 
 @dataclass
 class Payment:
-    """缴费单（v1.4 缴费通道）：active=预缴中（出场自动冲抵）/ used=已冲抵。"""
+    """缴费记录（v1.5）：type=spot 现缴（当场付清）/ monthly 月卡（有效期内出场免计费）。"""
 
     payment_id: str
     plate: str
+    ptype: str                      # spot | monthly
     amount: float
     pay_time: dt.datetime
-    ticket_id: str | None = None
-    status: str = "active"
+    valid_until: dt.datetime | None = None   # 仅月卡：有效期截止
 
 
 @dataclass
@@ -116,7 +116,7 @@ class State:
                 self.occupied[normalize_plate(p)] = area
 
     def restore_from_db(self) -> None:
-        """进程启动时从落盘库恢复：在场票据 + 未过期预约 + 预缴中缴费 + 编号序列。
+        """进程启动时从落盘库恢复：在场票据 + 未过期预约 + 有效月卡 + 编号序列。
 
         应在 `reset()`（重建初始驻车）之后调用；已过期预约落库标记 expired。
         """
@@ -134,11 +134,11 @@ class State:
             self.reservations[row["plate"]] = Reservation(
                 row["reserve_id"], row["plate"], row["area"],
                 dt.datetime.fromisoformat(row["reserve_time"]), keep)
-        for row in db.load_active_payments():
+        for row in db.load_active_monthly(now):
             self.payments[row["payment_id"]] = Payment(
-                row["payment_id"], row["plate"], float(row["amount"]),
+                row["payment_id"], row["plate"], row["ptype"], float(row["amount"]),
                 dt.datetime.fromisoformat(row["pay_time"]),
-                row["ticket_id"], row["status"])
+                dt.datetime.fromisoformat(row["valid_until"]))
         self._ticket_seq = db.max_ticket_seq()
         self._reserve_seq = db.max_reserve_seq()
         self._payment_seq = db.max_payment_seq()
@@ -219,42 +219,37 @@ class State:
         self.occupied[plate] = area
         self.tickets[plate] = ticket
         db.save_entry(ticket)   # 进入时间落库
-        # 入场前预缴的缴费单绑定到本票据（出场核对用）
-        for pay in self.payments.values():
-            if pay.plate == plate and pay.status == "active" and pay.ticket_id is None:
-                pay.ticket_id = ticket.ticket_id
-                db.bind_payment_ticket(pay.payment_id, ticket.ticket_id)
         return ticket
 
     def remove_entry(self, plate: str, *, exit_time: dt.datetime,
                      duration_min: int | None, fee: float | None) -> Ticket:
-        """出场：内存移除 + 落盘记录「离开时间 / 时长 / 费用 / 已缴费」+ 预缴单冲抵。"""
+        """出场：内存移除 + 落盘记录「离开时间 / 时长 / 费用 / 已缴费」。"""
         ticket = self.tickets.pop(plate)
         self.occupied.pop(plate, None)
         db.mark_exited(ticket.ticket_id, exit_time, duration_min, fee, paid=True)
-        for pay in self.payments.values():   # 预缴冲抵（status=used）
-            if pay.plate == plate and pay.status == "active":
-                pay.status = "used"
-                db.mark_payment_used(pay.payment_id)
         return ticket
 
-    # —— 缴费（v1.4 缴费通道：预缴，出场自动冲抵）——
+    # —— 缴费（v1.5：现缴 spot 当场付清 / 月卡 monthly 有效期内免计费）——
     def next_payment_id(self) -> str:
         self._payment_seq += 1
         return f"P-{self._payment_seq:04d}"
 
-    def add_payment(self, plate: str, amount: float) -> Payment:
-        pay = Payment(self.next_payment_id(), plate, float(amount), clock.now())
-        ticket = self.tickets.get(plate)
-        if ticket is not None:   # 在场中缴费：直接绑定当前票据
-            pay.ticket_id = ticket.ticket_id
+    def add_payment(self, plate: str, ptype: str, amount: float,
+                    valid_until: dt.datetime | None = None) -> Payment:
+        pay = Payment(self.next_payment_id(), plate, ptype, float(amount), clock.now(), valid_until)
         self.payments[pay.payment_id] = pay
-        db.save_payment(pay.payment_id, pay.plate, pay.ticket_id, pay.amount, pay.pay_time)
+        db.save_payment(pay.payment_id, pay.plate, pay.ptype, pay.amount,
+                        pay.pay_time, pay.valid_until)
         return pay
 
-    def prepaid_total(self, plate: str) -> float:
-        return round(sum(p.amount for p in self.payments.values()
-                         if p.plate == plate and p.status == "active"), 2)
+    def monthly_card(self, plate: str) -> Payment | None:
+        """该车牌当前有效的月卡（有效期未过）；无则 None。"""
+        now = clock.now()
+        for pay in self.payments.values():
+            if (pay.plate == plate and pay.ptype == "monthly"
+                    and pay.valid_until is not None and pay.valid_until > now):
+                return pay
+        return None
 
     # —— 预约 ——
     def next_reserve_id(self) -> str:

@@ -4,9 +4,9 @@
 - `tickets`：一行一票据 —— 进入时间、离开时间、时长、费用、缴费状态（active/closed），
   出场即落「离开时间 + 费用 + paid=1」（离开默认已缴费）；
 - `reservations`：一行一预约 —— 预约时间、保留截止、状态（active/consumed/expired）；
-- `payments`（v1.4）：一行一次缴费 —— 缴费号、车牌、所属票据、金额、缴费时间、
-  状态（active=预缴中 / used=出场已冲抵）；缴费通道（POST /pay）写入；
-- 进程重启：`State.restore_from_db()` 从本库恢复「在场票据 + 未过期预约 + 预缴中缴费 + 编号序列」，
+- `payments`（v1.5）：一行一次缴费 —— `type=spot` 现缴（当场付清，无余额）/
+  `type=monthly` 月卡（valid_until 有效期内出场免计费）；缴费通道（POST /pay）写入；
+- 进程重启：`State.restore_from_db()` 从本库恢复「在场票据 + 未过期预约 + 有效月卡 + 编号序列」，
   根治"车已进场、重启后却查不到（被说成没进场）"；
 - `/debug/reset`：`db.reset()` 清库，恢复演示初始。
 
@@ -73,9 +73,18 @@ class MockDB:
                     "status TEXT NOT NULL DEFAULT 'active')")
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS payments ("
-                    "payment_id TEXT PRIMARY KEY, plate TEXT NOT NULL, ticket_id TEXT,"
-                    "amount REAL NOT NULL, pay_time TEXT NOT NULL,"
-                    "status TEXT NOT NULL DEFAULT 'active')")
+                    "payment_id TEXT PRIMARY KEY, plate TEXT NOT NULL,"
+                    "type TEXT NOT NULL DEFAULT 'spot',"
+                    "amount REAL NOT NULL, pay_time TEXT NOT NULL, valid_until TEXT)")
+                # 旧 v1.4 预缴表（含 status，无 type）语义已废弃：重建为空表
+                cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
+                if "type" not in cols:
+                    conn.execute("DROP TABLE payments")
+                    conn.execute(
+                        "CREATE TABLE payments ("
+                        "payment_id TEXT PRIMARY KEY, plate TEXT NOT NULL,"
+                        "type TEXT NOT NULL DEFAULT 'spot',"
+                        "amount REAL NOT NULL, pay_time TEXT NOT NULL, valid_until TEXT)")
                 conn.commit()
             finally:
                 conn.close()
@@ -166,31 +175,31 @@ class MockDB:
         rows = self._query("SELECT MAX(CAST(SUBSTR(reserve_id, 3) AS INTEGER)) m FROM reservations")
         return int(rows[0]["m"] or 0)
 
-    # —— 缴费（v1.4 缴费通道）——
-    def save_payment(self, payment_id: str, plate: str, ticket_id: str | None,
-                     amount: float, pay_time: dt.datetime) -> None:
-        """预缴落库（状态 active=预缴中，出场结算时冲抵并转 used）。"""
+    # —— 缴费（v1.5：现缴 spot / 月卡 monthly）——
+    def save_payment(self, payment_id: str, plate: str, ptype: str,
+                     amount: float, pay_time: dt.datetime,
+                     valid_until: dt.datetime | None = None) -> None:
+        """缴费落库（spot=现缴；monthly=月卡，带有效期）。"""
         self._run(
-            "INSERT OR REPLACE INTO payments (payment_id, plate, ticket_id,"
-            " amount, pay_time, status) VALUES (?, ?, ?, ?, ?, 'active')",
-            (payment_id, plate, ticket_id, float(amount), pay_time.strftime(_FMT)))
+            "INSERT OR REPLACE INTO payments (payment_id, plate, type,"
+            " amount, pay_time, valid_until) VALUES (?, ?, ?, ?, ?, ?)",
+            (payment_id, plate, ptype, float(amount), pay_time.strftime(_FMT),
+             valid_until.strftime(_FMT) if valid_until else None))
 
-    def bind_payment_ticket(self, payment_id: str, ticket_id: str) -> None:
-        """入场后把入场前预缴的缴费单绑定到票据（便于出场核对）。"""
-        self._run("UPDATE payments SET ticket_id=? WHERE payment_id=?", (ticket_id, payment_id))
-
-    def mark_payment_used(self, payment_id: str) -> None:
-        self._run("UPDATE payments SET status='used' WHERE payment_id=?", (payment_id,))
-
-    def load_active_payments(self) -> list[dict]:
-        return self._query("SELECT * FROM payments WHERE status='active' ORDER BY pay_time")
-
-    def prepaid_total(self, plate: str) -> float:
-        """该车牌当前预缴中（未冲抵）的总额。"""
+    def active_monthly(self, plate: str, now: dt.datetime) -> dict | None:
+        """该车牌当前有效的月卡（有效期未过）；无则 None。now 由调用方取虚拟时钟。"""
         rows = self._query(
-            "SELECT COALESCE(SUM(amount), 0) s FROM payments"
-            " WHERE plate=? AND status='active'", (plate,))
-        return round(float(rows[0]["s"] or 0), 2)
+            "SELECT * FROM payments WHERE plate=? AND type='monthly'"
+            " AND valid_until IS NOT NULL AND valid_until > ?"
+            " ORDER BY valid_until DESC LIMIT 1", (plate, now.strftime(_FMT)))
+        return rows[0] if rows else None
+
+    def load_active_monthly(self, now: dt.datetime) -> list[dict]:
+        rows = self._query(
+            "SELECT payment_id, plate, type AS ptype, amount, pay_time, valid_until"
+            " FROM payments WHERE type='monthly' AND valid_until > ?"
+            " ORDER BY valid_until", (now.strftime(_FMT),))
+        return rows
 
     def max_payment_seq(self) -> int:
         rows = self._query("SELECT MAX(CAST(SUBSTR(payment_id, 3) AS INTEGER)) m FROM payments")

@@ -119,28 +119,29 @@
 重启 mock 服务后 `GET /vehicle` 仍在场；用户问"刚才那笔停车费交了吗"→ Agent 答"已缴费 ✅、
 91 分钟、4.50 元"并主动更正不在场状态。
 
-### 1.9 v1.4 新增：缴费通道 POST /pay（2026-10-14 补测）
+### 1.9 v1.5 缴费 POST /pay（2026-10-15 定稿：现缴 + 月卡）
 
-需求方迭代：「添加一个缴费通道，用于模拟用户给车牌缴费。」
+需求方迭代：「不需要冲抵，不需要预缴，只要现缴和月卡。」（v1.4 预缴/冲抵模型已废弃移除）
 
 | 用例号 | 操作 | 预期 | 实际 | 通过 |
 |---|---|---|---|---|
-| TC-Mock-50 | 不在场且不填金额 `POST /pay` | 400 `INVALID_PARAM` | 一致 | ✓ |
-| TC-Mock-51 | 不在场预缴 20 元 | `P-0001`、active、prepaid_total=20 | 一致 | ✓ |
-| TC-Mock-51b | `GET /vehicle` | `prepaid_total=20`（预缴可见） | 一致 | ✓ |
-| TC-Mock-51c | `GET /records` | `payments` 含该缴费单 | 一致 | ✓ |
-| TC-Mock-52 | 负金额缴费 | 400 `INVALID_PARAM` | 一致 | ✓ |
-| TC-Mock-53 | **在场**不填金额缴费 | 按出场费自动入账 12.00、绑定 T-0001 | 一致 | ✓ |
-| TC-Mock-54 | 出场结算 | `prepaid_used=32`（20+12 全额冲抵） | 一致 | ✓ |
-| TC-Mock-54b | 出场后 `GET /vehicle` | `prepaid_total=0`（已冲抵） | 一致 | ✓ |
-| TC-Mock-54c | 出场后 `GET /records` | 两笔缴费均 `used`（已冲抵） | 一致 | ✓ |
-| TC-Mock-55 | 模拟重启（restore_from_db） | 预缴记录恢复（15 元预缴中） | 一致 | ✓ |
+| TC-Mock-50 | 不在场现缴 `POST /pay` | 400 `NOT_INSIDE`（无待缴费用） | 一致 | ✓ |
+| TC-Mock-51 | 非法 type | 400 `INVALID_PARAM` | 一致 | ✓ |
+| TC-Mock-52 | 在场现缴（120 分钟） | 按出场费 12.00 当场结清、`type=spot`、P-0001 | 一致 | ✓ |
+| TC-Mock-52b | `GET /records` | 缴费记录 `type=spot`，无预缴字段 | 一致 | ✓ |
+| TC-Mock-53 | 月卡办理（不在场，小型车） | 300.00 元、`valid_until` 30 天后 | 一致 | ✓ |
+| TC-Mock-53b | 重复办月卡 | 400 `INVALID_PARAM` | 一致 | ✓ |
+| TC-Mock-53c | `GET /vehicle` | `monthly` 生效中 | 一致 | ✓ |
+| TC-Mock-54 | 月卡车出场 | `total=0`、`monthly=true`（免计费） | 一致 | ✓ |
+| TC-Mock-55 | 模拟重启（restore_from_db） | 有效月卡恢复（仍生效） | 一致 | ✓ |
+| TC-Mock-55b | 恢复集 | 仅含有效月卡（现缴无恢复语义） | 一致 | ✓ |
 | TC-Mock-56 | `/debug/reset` | 缴费记录清空 | 一致 | ✓ |
 
-**接口用例合计 63 项，全部通过。** 浏览器端实测（截图 `docs/测试证据/vue-pay-channel.png`、
-`vue-pay-records.png`）：缴费通道卡片试算 ¥12.00（120 分钟）→ 缴费成功（P-0001 绑定 T-0001）→
-记录弹窗"缴费"表显示 P-0001 已冲抵（出场）→ 问 Agent"我已经缴费了吗"→ 答"预缴中 30.00 元，
-出场时自动冲抵"。
+**接口用例合计 63 项，全部通过。** 浏览器端实测（截图 `docs/测试证据/vue-pay-spot-monthly.png`、
+`vue-v15-pay-records.png`、`vue-v15-agent-monthly-qa.png`）：试算 ¥12.00 → 现缴成功（P-0001）→
+切月卡办理成功（P-0002 · ¥300.00 · 有效至 30 天后）；记录弹窗"缴费（现缴/月卡）"表分类展示；
+问 Agent"我的车停在哪个区域？我有月卡吗？"→ 答"停在 A 区、无生效中的月卡"（主动更正），
+追问费用 → 工具计算 15.0 元并说明已缴费。
 
 ---
 

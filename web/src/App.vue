@@ -45,7 +45,7 @@
         </div>
         <div ref="chatBody" class="chat-body">
           <div v-if="!messages.length" class="chat-empty">
-            试着问：<br />「A区还有多少车位？」<br />「让 cam-1 的车入场」<br />「小型车怎么收费？」
+            {{ currentUser ? `你好，${currentUser.name}。可以问我你的车辆状态、停车费用或停车场规章。` : '请先选择或添加用户' }}
           </div>
           <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
             <div class="who">{{ m.role === 'user' ? '🧑' : '🤖' }}</div>
@@ -125,33 +125,33 @@
           </div>
         </section>
 
-        <!-- 缴费通道 -->
+        <!-- 缴费 -->
         <section class="card">
           <div class="card-title">
-            <span class="t"><el-icon><Wallet /></el-icon>缴费通道</span>
-            <span style="font-size: 12px; color: var(--muted)">预缴出场自动冲抵</span>
+            <span class="t"><el-icon><Wallet /></el-icon>缴费</span>
+            <span style="font-size: 12px; color: var(--muted)">现缴 · 月卡</span>
           </div>
           <div class="pay-body">
             <div class="pay-row">
               <el-input v-model="payPlate" placeholder="车牌号，如 京A12345" style="flex: 1"
                         :disabled="paying" @keyup.enter="doPay" />
-              <el-button type="primary" :icon="Wallet" :loading="paying" @click="doPay">缴费</el-button>
+              <el-button type="primary" :icon="Wallet" :loading="paying" @click="doPay">
+                {{ payType === 'spot' ? '现缴' : '办月卡' }}
+              </el-button>
             </div>
             <div class="pay-row">
-              <el-radio-group v-model="payMode" size="small">
-                <el-radio-button value="auto">按出场费缴费</el-radio-button>
-                <el-radio-button value="amount">自定金额</el-radio-button>
+              <el-radio-group v-model="payType" size="small">
+                <el-radio-button value="spot">现缴（出场费）</el-radio-button>
+                <el-radio-button value="monthly">月卡</el-radio-button>
               </el-radio-group>
-              <el-input-number v-if="payMode === 'amount'" v-model="payAmount" :min="0.01" :precision="2"
-                               :step="1" size="small" style="width: 140px" />
-              <el-button v-else size="small" :icon="Refresh" :loading="feeLoading" @click="doQueryFee">
-                试算 {{ feeText }}
-              </el-button>
+              <el-button v-if="payType === 'spot'" size="small" :icon="Refresh"
+                         :loading="feeLoading" @click="doQueryFee">试算 {{ feeText }}</el-button>
+              <el-tag v-else type="warning" effect="plain" size="small">30 天有效期内出场免计费</el-tag>
             </div>
             <div v-if="payHint" class="pay-hint"
                  :class="{ ok: payHint.ok, warn: !payHint.ok }">{{ payHint.text }}</div>
             <div style="font-size: 12px; color: var(--muted)">
-              在场车可不填金额（按当前出场费入账）；不在场车需自定金额（预缴，出场自动冲抵）。
+              现缴：当场结清当前停车费（仅在场车）；月卡：按车型月卡价办理，有效期内停车不计费。
             </div>
           </div>
         </section>
@@ -299,23 +299,23 @@
             </template>
           </el-table-column>
         </el-table>
-        <h4 style="margin-top: 14px">缴费（缴费通道）</h4>
+        <h4 style="margin-top: 14px">缴费（现缴 / 月卡）</h4>
         <el-table :data="records.payments" size="small" max-height="180">
           <el-table-column prop="payment_id" label="缴费号" width="82" />
           <el-table-column prop="plate" label="车牌" width="106" />
-          <el-table-column prop="ticket_id" label="票据" width="82">
-            <template #default="{ row }">{{ row.ticket_id || '—' }}</template>
+          <el-table-column label="类型" width="76">
+            <template #default="{ row }">
+              <el-tag :type="row.type === 'monthly' ? 'warning' : 'primary'" size="small" effect="plain">
+                {{ row.type === 'monthly' ? '月卡' : '现缴' }}
+              </el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="金额" width="86">
             <template #default="{ row }">¥{{ row.amount.toFixed(2) }}</template>
           </el-table-column>
           <el-table-column prop="pay_time" label="缴费时间" width="152" />
-          <el-table-column label="状态">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 'used' ? 'info' : 'success'" size="small" effect="plain">
-                {{ row.status === 'used' ? '已冲抵（出场）' : '预缴中' }}
-              </el-tag>
-            </template>
+          <el-table-column label="有效期" width="152">
+            <template #default="{ row }">{{ row.valid_until || '—' }}</template>
           </el-table-column>
         </el-table>
       </div>
@@ -452,10 +452,9 @@ const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场
 const uploadAction = ref('entry')   // 上传动作：entry=登记入场 / exit=结算出场
 const uploadArea = ref('auto')      // 上传入场目标区域：auto=自动分配 / A/B/C
 
-// ── 缴费通道 ──
+// ── 缴费（现缴 / 月卡）──
 const payPlate = ref('')
-const payMode = ref('auto')     // auto=按出场费缴费 / amount=自定金额
-const payAmount = ref(10)
+const payType = ref('spot')     // spot=现缴（出场费）/ monthly=月卡
 const paying = ref(false)
 const feeLoading = ref(false)
 const feeText = ref('查询')
@@ -469,7 +468,7 @@ async function doQueryFee() {
     const { data } = await api.post('/fee', { plate })
     if (data.ok) {
       feeText.value = `¥${data.total.toFixed(2)}（${data.duration_min} 分钟）`
-      payHint.value = { ok: true, text: `${plate} 在场，当前出场费 ¥${data.total.toFixed(2)}（${data.duration_min} 分钟）` }
+      payHint.value = { ok: true, text: `${plate} 在场，当前应缴 ¥${data.total.toFixed(2)}（${data.duration_min} 分钟）` }
     } else {
       feeText.value = '查询'
       payHint.value = { ok: false, text: data.error?.message || '查询失败' }
@@ -487,15 +486,19 @@ async function doPay() {
   if (!plate) return ElMessage.warning('请输入车牌号')
   paying.value = true
   try {
-    const payload = { plate }
-    if (payMode.value === 'amount') payload.amount = payAmount.value
-    const { data } = await api.post('/pay', payload)
+    const { data } = await api.post('/pay', { plate, type: payType.value })
     if (data.ok) {
-      payHint.value = { ok: true,
-        text: `缴费成功：${plate} ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
-              + (data.inside ? ` · 在场票据 ${data.ticket_id}` : ' · 预缴（入场后自动冲抵）')
-              + ` · 累计预缴 ¥${data.prepaid_total.toFixed(2)}` }
-      ElMessage.success(`缴费成功 ¥${data.amount.toFixed(2)}`)
+      if (data.type === 'monthly') {
+        payHint.value = { ok: true,
+          text: `月卡办理成功：${plate} ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
+                + ` · 有效至 ${data.valid_until} · 有效期内出场免计费` }
+        ElMessage.success(`月卡办理成功 ¥${data.amount.toFixed(2)}（30 天）`)
+      } else {
+        payHint.value = { ok: true,
+          text: `现缴成功：${plate} ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
+                + ` · 已结清 ${data.duration_min} 分钟停车费` }
+        ElMessage.success(`现缴成功 ¥${data.amount.toFixed(2)}`)
+      }
       recog.value = null
       gate.value = null
       loadLots()

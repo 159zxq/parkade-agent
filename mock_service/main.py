@@ -14,7 +14,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
@@ -72,7 +72,8 @@ class TimeReq(BaseModel):
 
 class PayReq(BaseModel):
     plate: str
-    amount: float | None = None   # 不传：在场车按其当前出场费预缴；不在场则必传
+    type: str = "spot"               # spot=现缴（当场结清本次停车费）/ monthly=月卡（有效期内免计费）
+    vehicle_type: str | None = None  # 仅月卡用：车型（缺省取在场票据车型，否则小型车）
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +155,8 @@ def exit_(req: ExitReq):
         return _err(400, "NOT_INSIDE", f"车牌 {plate} 不在场内")
 
     exit_time = clock.now()
-    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time)
-    prepaid = state.prepaid_total(plate)   # 出场前的预缴余额（出场即冲抵）
+    monthly = state.monthly_card(plate)   # 有效月卡 → 免计费（契约 v1.5）
+    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time, monthly=monthly is not None)
 
     body = {"ok": True, "plate": plate, "vehicle_type": ticket.vehicle_type,
             "area": ticket.area, "ticket_id": ticket.ticket_id,
@@ -164,7 +165,7 @@ def exit_(req: ExitReq):
             "duration_min": fee["duration_min"], "free_minutes": fee["free_minutes"],
             "billable_minutes": fee["billable_minutes"], "units": fee["units"],
             "subtotal": fee["subtotal"], "cap_applied": fee["cap_applied"],
-            "total": fee["total"], "paid": True, "prepaid_used": prepaid}
+            "total": fee["total"], "paid": True, "monthly": monthly is not None}
 
     if not req.dry_run:
         # 落盘：离开时间 + 时长 + 费用 + 已缴费（离开默认已缴费，契约 v1.3）
@@ -205,7 +206,7 @@ def reserve(req: ReserveReq):
 
 
 # ---------------------------------------------------------------------------
-# 缴费通道（契约 v1.4）：模拟车主给车牌缴费（预缴，出场自动冲抵）
+# 缴费（契约 v1.5）：现缴 spot（当场付清本次停车费）/ 月卡 monthly（有效期内免计费）
 # ---------------------------------------------------------------------------
 @app.post("/pay")
 def pay(req: PayReq):
@@ -213,24 +214,37 @@ def pay(req: PayReq):
     if not plate:
         return _err(400, "INVALID_PARAM", "车牌不能为空")
 
-    ticket = state.tickets.get(plate)
-    if req.amount is None:
-        if ticket is None:
-            return _err(400, "INVALID_PARAM",
-                        f"车牌 {plate} 不在场，需指定缴费金额 amount（预缴）")
-        fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now())
-        amount = float(fee["total"])
-    else:
-        amount = float(req.amount)
-        if amount <= 0:
-            return _err(400, "INVALID_PARAM", "缴费金额需大于 0")
+    ptype = (req.type or "spot").strip().lower()
+    if ptype not in ("spot", "monthly"):
+        return _err(400, "INVALID_PARAM", "type 只能为 spot（现缴）或 monthly（月卡）")
 
-    pay_ = state.add_payment(plate, amount)
+    ticket = state.tickets.get(plate)
+    if ptype == "monthly":
+        # 月卡：按车型月卡价，有效期一个月（30 天）
+        if state.monthly_card(plate) is not None:
+            return _err(400, "INVALID_PARAM", f"车牌 {plate} 已有生效中的月卡")
+        vehicle = req.vehicle_type or (ticket.vehicle_type if ticket else DEFAULT_VEHICLE_TYPE)
+        if vehicle not in load_rates()["vehicles"]:
+            return _err(400, "INVALID_PARAM", f"未知车型: {vehicle}")
+        price = float(load_rates()["vehicles"][vehicle]["monthly_card"])
+        valid_until = clock.now() + timedelta(days=30)
+        pay_ = state.add_payment(plate, "monthly", price, valid_until)
+        return {"ok": True, "payment_id": pay_.payment_id, "plate": plate,
+                "type": "monthly", "vehicle_type": vehicle, "amount": pay_.amount,
+                "pay_time": pay_.pay_time.strftime(FMT),
+                "valid_until": pay_.valid_until.strftime(FMT),
+                "monthly_active": True}
+
+    # 现缴：当场结清本次停车费——在场必须（按当前出场费付清）；不在场无需缴费
+    if ticket is None:
+        return _err(400, "NOT_INSIDE", f"车牌 {plate} 不在场内，无待缴停车费")
+
+    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now())
+    pay_ = state.add_payment(plate, "spot", float(fee["total"]))
     return {"ok": True, "payment_id": pay_.payment_id, "plate": plate,
-            "amount": pay_.amount, "pay_time": pay_.pay_time.strftime(FMT),
-            "inside": ticket is not None,
-            "ticket_id": pay_.ticket_id, "status": pay_.status,
-            "prepaid_total": state.prepaid_total(plate)}
+            "type": "spot", "amount": pay_.amount,
+            "pay_time": pay_.pay_time.strftime(FMT),
+            "duration_min": fee["duration_min"], "total": fee["total"]}
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +293,16 @@ def vehicle_status(plate: str):
                       "fee": last["fee"], "paid": last["paid"]}
 
     reservation = _reservation_view(res) if res is not None else None
-    prepaid_total = state.prepaid_total(p)
+    monthly = state.monthly_card(p)
+    monthly_info = ({"payment_id": monthly.payment_id, "valid_until": monthly.valid_until.strftime(FMT)}
+                    if monthly is not None else None)
 
     if area is None:
         return {"ok": True, "plate": p, "inside": False, "area": None,
                 "vehicle_type": None, "ticket_id": None, "entry_time": None,
                 "duration_min": None, "queried_at": clock.now().strftime(FMT),
                 "reservation": reservation, "last_visit": last_visit,
-                "prepaid_total": prepaid_total}
+                "monthly": monthly_info}
     duration = None
     if ticket is not None:
         duration = int((clock.now() - ticket.entry_time).total_seconds() // 60)
@@ -296,7 +312,7 @@ def vehicle_status(plate: str):
             "entry_time": ticket.entry_time.strftime(FMT) if ticket else None,
             "duration_min": duration, "queried_at": clock.now().strftime(FMT),
             "reservation": reservation, "last_visit": last_visit,
-            "prepaid_total": prepaid_total}
+            "monthly": monthly_info}
 
 
 # ---------------------------------------------------------------------------
