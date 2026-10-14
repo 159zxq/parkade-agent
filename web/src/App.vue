@@ -108,17 +108,6 @@
               </div>
             </el-upload>
           </div>
-          <div class="camera-row">
-            <el-select v-model="camera" style="flex: 1" size="default">
-              <el-option v-for="(name, id) in CAMERAS" :key="id" :value="id" :label="`${id}（${name}）`" />
-            </el-select>
-            <el-button type="primary" :icon="Camera" :loading="recognizing" @click="onCapture">
-              相机抓拍
-            </el-button>
-          </div>
-          <div style="font-size: 12px; color: var(--muted); margin: -6px 16px 8px">
-            相机抓拍按物理位置：cam-1/2/3 = A/B/C 区入口（自动进所在区），cam-4 = 出口结算
-          </div>
           <div v-if="recog" class="recog-result">
             <el-tag :type="BADGES[recog.source]?.type || 'info'" size="large" effect="dark" style="align-self: center">
               {{ BADGES[recog.source]?.text || recog.source }}
@@ -133,6 +122,37 @@
                       :closable="false" show-icon />
             <el-alert v-if="recog.error" :title="recog.error" type="warning" :closable="false" show-icon />
             <img v-if="recog.image_url" :src="recog.image_url" class="recog-img" alt="抓拍图片" />
+          </div>
+        </section>
+
+        <!-- 缴费通道 -->
+        <section class="card">
+          <div class="card-title">
+            <span class="t"><el-icon><Wallet /></el-icon>缴费通道</span>
+            <span style="font-size: 12px; color: var(--muted)">预缴出场自动冲抵</span>
+          </div>
+          <div class="pay-body">
+            <div class="pay-row">
+              <el-input v-model="payPlate" placeholder="车牌号，如 京A12345" style="flex: 1"
+                        :disabled="paying" @keyup.enter="doPay" />
+              <el-button type="primary" :icon="Wallet" :loading="paying" @click="doPay">缴费</el-button>
+            </div>
+            <div class="pay-row">
+              <el-radio-group v-model="payMode" size="small">
+                <el-radio-button value="auto">按出场费缴费</el-radio-button>
+                <el-radio-button value="amount">自定金额</el-radio-button>
+              </el-radio-group>
+              <el-input-number v-if="payMode === 'amount'" v-model="payAmount" :min="0.01" :precision="2"
+                               :step="1" size="small" style="width: 140px" />
+              <el-button v-else size="small" :icon="Refresh" :loading="feeLoading" @click="doQueryFee">
+                试算 {{ feeText }}
+              </el-button>
+            </div>
+            <div v-if="payHint" class="pay-hint"
+                 :class="{ ok: payHint.ok, warn: !payHint.ok }">{{ payHint.text }}</div>
+            <div style="font-size: 12px; color: var(--muted)">
+              在场车可不填金额（按当前出场费入账）；不在场车需自定金额（预缴，出场自动冲抵）。
+            </div>
           </div>
         </section>
 
@@ -279,6 +299,25 @@
             </template>
           </el-table-column>
         </el-table>
+        <h4 style="margin-top: 14px">缴费（缴费通道）</h4>
+        <el-table :data="records.payments" size="small" max-height="180">
+          <el-table-column prop="payment_id" label="缴费号" width="82" />
+          <el-table-column prop="plate" label="车牌" width="106" />
+          <el-table-column prop="ticket_id" label="票据" width="82">
+            <template #default="{ row }">{{ row.ticket_id || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="金额" width="86">
+            <template #default="{ row }">¥{{ row.amount.toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column prop="pay_time" label="缴费时间" width="152" />
+          <el-table-column label="状态">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'used' ? 'info' : 'success'" size="small" effect="plain">
+                {{ row.status === 'used' ? '已冲抵（出场）' : '预缴中' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
       <template #footer>
         <el-button type="primary" @click="recordsDialog = false">关闭</el-button>
@@ -290,10 +329,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, ChatDotRound, Promotion, Loading, Camera, UploadFilled, DataLine, Setting, Refresh, User, Tickets } from '@element-plus/icons-vue'
+import { Plus, Delete, ChatDotRound, Promotion, Loading, Camera, UploadFilled, DataLine, Setting, Refresh, User, Tickets, Wallet } from '@element-plus/icons-vue'
 import api from './api'
 
-const CAMERAS = { 'cam-1': 'A 区入口', 'cam-2': 'B 区入口', 'cam-3': 'C 区入口', 'cam-4': '出口' }
 const BADGES = {
   both_agree: { text: '双通道一致', type: 'success' },
   both_conflict: { text: '存在分歧（以 OCR 为准）', type: 'warning' },
@@ -408,12 +446,68 @@ async function clearChat() {
 }
 
 // ── 识别 ──
-const camera = ref('cam-1')
 const recognizing = ref(false)
 const recog = ref(null)
 const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场）
 const uploadAction = ref('entry')   // 上传动作：entry=登记入场 / exit=结算出场
 const uploadArea = ref('auto')      // 上传入场目标区域：auto=自动分配 / A/B/C
+
+// ── 缴费通道 ──
+const payPlate = ref('')
+const payMode = ref('auto')     // auto=按出场费缴费 / amount=自定金额
+const payAmount = ref(10)
+const paying = ref(false)
+const feeLoading = ref(false)
+const feeText = ref('查询')
+const payHint = ref(null)
+
+async function doQueryFee() {
+  const plate = payPlate.value.replace(/\s/g, '').toUpperCase()
+  if (!plate) return ElMessage.warning('请输入车牌号')
+  feeLoading.value = true
+  try {
+    const { data } = await api.post('/fee', { plate })
+    if (data.ok) {
+      feeText.value = `¥${data.total.toFixed(2)}（${data.duration_min} 分钟）`
+      payHint.value = { ok: true, text: `${plate} 在场，当前出场费 ¥${data.total.toFixed(2)}（${data.duration_min} 分钟）` }
+    } else {
+      feeText.value = '查询'
+      payHint.value = { ok: false, text: data.error?.message || '查询失败' }
+    }
+  } catch (e) {
+    feeText.value = '查询'
+    payHint.value = { ok: false, text: e.response?.data?.error?.message || '查询失败' }
+  } finally {
+    feeLoading.value = false
+  }
+}
+
+async function doPay() {
+  const plate = payPlate.value.replace(/\s/g, '').toUpperCase()
+  if (!plate) return ElMessage.warning('请输入车牌号')
+  paying.value = true
+  try {
+    const payload = { plate }
+    if (payMode.value === 'amount') payload.amount = payAmount.value
+    const { data } = await api.post('/pay', payload)
+    if (data.ok) {
+      payHint.value = { ok: true,
+        text: `缴费成功：${plate} ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
+              + (data.inside ? ` · 在场票据 ${data.ticket_id}` : ' · 预缴（入场后自动冲抵）')
+              + ` · 累计预缴 ¥${data.prepaid_total.toFixed(2)}` }
+      ElMessage.success(`缴费成功 ¥${data.amount.toFixed(2)}`)
+      recog.value = null
+      gate.value = null
+      loadLots()
+    } else {
+      payHint.value = { ok: false, text: data.error?.message || '缴费失败' }
+    }
+  } catch (e) {
+    payHint.value = { ok: false, text: e.response?.data?.error?.message || '缴费失败' }
+  } finally {
+    paying.value = false
+  }
+}
 
 function applyRecognize(data) {
   recog.value = data.result
@@ -447,18 +541,6 @@ async function onUpload(file) {
   return false // 阻止 el-upload 默认上传
 }
 
-async function onCapture() {
-  recognizing.value = true
-  try {
-    const { data } = await api.post('/capture', { camera_id: camera.value })
-    applyRecognize(data)
-  } catch (e) {
-    ElMessage.error(e.response?.data?.error || '抓拍失败')
-  } finally {
-    recognizing.value = false
-  }
-}
-
 // ── 看板 ──
 const lots = ref([])
 const lotsUpdated = ref('—')
@@ -470,7 +552,7 @@ const debugTime = ref(null)
 // ── 记录（进出场/缴费/预约，来自 mock 落盘库）──
 const recordsDialog = ref(false)
 const recordsPlate = ref('')
-const records = reactive({ tickets: [], reservations: [] })
+const records = reactive({ tickets: [], reservations: [], payments: [] })
 
 async function loadRecords() {
   try {
@@ -480,6 +562,7 @@ async function loadRecords() {
     if (data.ok) {
       records.tickets = data.tickets
       records.reservations = data.reservations
+      records.payments = data.payments || []
     }
   } catch {
     ElMessage.error('记录查询失败（Mock 服务不可达？）')

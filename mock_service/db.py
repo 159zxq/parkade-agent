@@ -1,10 +1,12 @@
-"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕（契约 v1.3）。
+"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕（契约 v1.3/v1.4）。
 
 - 位置：`data/mock.sqlite`（gitignored；与 checkpoints/web.sqlite 同级）；
 - `tickets`：一行一票据 —— 进入时间、离开时间、时长、费用、缴费状态（active/closed），
   出场即落「离开时间 + 费用 + paid=1」（离开默认已缴费）；
 - `reservations`：一行一预约 —— 预约时间、保留截止、状态（active/consumed/expired）；
-- 进程重启：`State.restore_from_db()` 从本库恢复「在场票据 + 未过期预约 + 编号序列」，
+- `payments`（v1.4）：一行一次缴费 —— 缴费号、车牌、所属票据、金额、缴费时间、
+  状态（active=预缴中 / used=出场已冲抵）；缴费通道（POST /pay）写入；
+- 进程重启：`State.restore_from_db()` 从本库恢复「在场票据 + 未过期预约 + 预缴中缴费 + 编号序列」，
   根治"车已进场、重启后却查不到（被说成没进场）"；
 - `/debug/reset`：`db.reset()` 清库，恢复演示初始。
 
@@ -69,6 +71,11 @@ class MockDB:
                     "reserve_id TEXT PRIMARY KEY, plate TEXT NOT NULL, area TEXT,"
                     "reserve_time TEXT NOT NULL, keep_until TEXT NOT NULL,"
                     "status TEXT NOT NULL DEFAULT 'active')")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS payments ("
+                    "payment_id TEXT PRIMARY KEY, plate TEXT NOT NULL, ticket_id TEXT,"
+                    "amount REAL NOT NULL, pay_time TEXT NOT NULL,"
+                    "status TEXT NOT NULL DEFAULT 'active')")
                 conn.commit()
             finally:
                 conn.close()
@@ -77,6 +84,7 @@ class MockDB:
         """清空全部记录（/debug/reset 用；随后由 state.reset() 重建初始驻车）。"""
         self._run("DELETE FROM tickets")
         self._run("DELETE FROM reservations")
+        self._run("DELETE FROM payments")
 
     # —— 票据（进出场 / 缴费）——
     def save_entry(self, ticket) -> None:
@@ -157,6 +165,44 @@ class MockDB:
     def max_reserve_seq(self) -> int:
         rows = self._query("SELECT MAX(CAST(SUBSTR(reserve_id, 3) AS INTEGER)) m FROM reservations")
         return int(rows[0]["m"] or 0)
+
+    # —— 缴费（v1.4 缴费通道）——
+    def save_payment(self, payment_id: str, plate: str, ticket_id: str | None,
+                     amount: float, pay_time: dt.datetime) -> None:
+        """预缴落库（状态 active=预缴中，出场结算时冲抵并转 used）。"""
+        self._run(
+            "INSERT OR REPLACE INTO payments (payment_id, plate, ticket_id,"
+            " amount, pay_time, status) VALUES (?, ?, ?, ?, ?, 'active')",
+            (payment_id, plate, ticket_id, float(amount), pay_time.strftime(_FMT)))
+
+    def bind_payment_ticket(self, payment_id: str, ticket_id: str) -> None:
+        """入场后把入场前预缴的缴费单绑定到票据（便于出场核对）。"""
+        self._run("UPDATE payments SET ticket_id=? WHERE payment_id=?", (ticket_id, payment_id))
+
+    def mark_payment_used(self, payment_id: str) -> None:
+        self._run("UPDATE payments SET status='used' WHERE payment_id=?", (payment_id,))
+
+    def load_active_payments(self) -> list[dict]:
+        return self._query("SELECT * FROM payments WHERE status='active' ORDER BY pay_time")
+
+    def prepaid_total(self, plate: str) -> float:
+        """该车牌当前预缴中（未冲抵）的总额。"""
+        rows = self._query(
+            "SELECT COALESCE(SUM(amount), 0) s FROM payments"
+            " WHERE plate=? AND status='active'", (plate,))
+        return round(float(rows[0]["s"] or 0), 2)
+
+    def max_payment_seq(self) -> int:
+        rows = self._query("SELECT MAX(CAST(SUBSTR(payment_id, 3) AS INTEGER)) m FROM payments")
+        return int(rows[0]["m"] or 0)
+
+    def list_payments(self, plate: str | None, limit: int) -> list[dict]:
+        if plate:
+            return self._query(
+                "SELECT * FROM payments WHERE plate=? ORDER BY pay_time DESC LIMIT ?",
+                (plate, limit))
+        return self._query(
+            "SELECT * FROM payments ORDER BY pay_time DESC LIMIT ?", (limit,))
 
 
 db = MockDB()

@@ -219,6 +219,9 @@ def _vehicle_context(user_row) -> str | None:
     if rsv:
         lines.append(f"预约情况：已预约 {rsv.get('area') or '系统分配'} 区"
                      f"，保留至 {rsv['keep_until']}（未过期，入场可核销）")
+    prepaid = v.get("prepaid_total")
+    if prepaid:
+        lines.append(f"缴费情况：预缴中 **{prepaid:.2f} 元**（出场自动冲抵，无需再付）")
     last = v.get("last_visit")
     if last:
         paid_txt = "已缴费" if last.get("paid") else "未缴费"
@@ -403,6 +406,30 @@ def records(plate: str | None = None, limit: int = 20):
     """进出场 / 缴费 / 预约 留痕查询（透传 mock 落盘记录库）。"""
     qs = f"?limit={limit}" + (f"&plate={plate}" if plate else "")
     return _mock("GET", f"/records{qs}")
+
+
+class PayReq(BaseModel):
+    plate: str
+    amount: float | None = None   # 不传：在场车按当前出场费预缴；不在场需指定金额
+
+
+@app.post("/api/pay")
+def pay(req: PayReq):
+    """缴费通道（模拟车主给车牌缴费，预缴出场自动冲抵；透传 mock /pay）。"""
+    payload = {"plate": req.plate.strip().upper()}
+    if req.amount is not None:
+        payload["amount"] = req.amount
+    return _mock("POST", "/pay", payload)
+
+
+class FeeReq(BaseModel):
+    plate: str
+
+
+@app.post("/api/fee")
+def fee(req: FeeReq):
+    """当前出场费试算（dry_run，不改状态；未在场返回业务错误）。"""
+    return _mock("POST", "/exit", {"plate": req.plate.strip().upper(), "dry_run": True})
 
 
 class LotsDebugReq(BaseModel):

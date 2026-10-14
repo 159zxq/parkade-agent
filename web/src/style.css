@@ -170,6 +170,13 @@ html, body, #app {
 .gate-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; }
 .camera-row { display: flex; gap: 10px; padding: 10px 16px 14px; align-items: center; }
 
+/* 缴费通道 */
+.pay-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.pay-row { display: flex; gap: 10px; align-items: center; }
+.pay-hint { font-size: 12.5px; padding: 8px 10px; border-radius: 8px; line-height: 1.5; }
+.pay-hint.ok { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.pay-hint.warn { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+
 /* 看板 */
 .board-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 .area-row .area-head { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 6px; }

@@ -70,6 +70,11 @@ class TimeReq(BaseModel):
     set: str | None = None
 
 
+class PayReq(BaseModel):
+    plate: str
+    amount: float | None = None   # 不传：在场车按其当前出场费预缴；不在场则必传
+
+
 # ---------------------------------------------------------------------------
 # B1 — 车位状态（容量取自 state.capacity，可经 /debug/lots 调试）
 # ---------------------------------------------------------------------------
@@ -150,6 +155,7 @@ def exit_(req: ExitReq):
 
     exit_time = clock.now()
     fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time)
+    prepaid = state.prepaid_total(plate)   # 出场前的预缴余额（出场即冲抵）
 
     body = {"ok": True, "plate": plate, "vehicle_type": ticket.vehicle_type,
             "area": ticket.area, "ticket_id": ticket.ticket_id,
@@ -158,7 +164,7 @@ def exit_(req: ExitReq):
             "duration_min": fee["duration_min"], "free_minutes": fee["free_minutes"],
             "billable_minutes": fee["billable_minutes"], "units": fee["units"],
             "subtotal": fee["subtotal"], "cap_applied": fee["cap_applied"],
-            "total": fee["total"], "paid": True}
+            "total": fee["total"], "paid": True, "prepaid_used": prepaid}
 
     if not req.dry_run:
         # 落盘：离开时间 + 时长 + 费用 + 已缴费（离开默认已缴费，契约 v1.3）
@@ -196,6 +202,35 @@ def reserve(req: ReserveReq):
     return {"ok": True, "reserve_id": res.reserve_id, "plate": plate, "area": res.area,
             "reserve_time": res.reserve_time.strftime(FMT),
             "keep_until": res.keep_until.strftime(FMT), "status": res.status}
+
+
+# ---------------------------------------------------------------------------
+# 缴费通道（契约 v1.4）：模拟车主给车牌缴费（预缴，出场自动冲抵）
+# ---------------------------------------------------------------------------
+@app.post("/pay")
+def pay(req: PayReq):
+    plate = normalize_plate(req.plate)
+    if not plate:
+        return _err(400, "INVALID_PARAM", "车牌不能为空")
+
+    ticket = state.tickets.get(plate)
+    if req.amount is None:
+        if ticket is None:
+            return _err(400, "INVALID_PARAM",
+                        f"车牌 {plate} 不在场，需指定缴费金额 amount（预缴）")
+        fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now())
+        amount = float(fee["total"])
+    else:
+        amount = float(req.amount)
+        if amount <= 0:
+            return _err(400, "INVALID_PARAM", "缴费金额需大于 0")
+
+    pay_ = state.add_payment(plate, amount)
+    return {"ok": True, "payment_id": pay_.payment_id, "plate": plate,
+            "amount": pay_.amount, "pay_time": pay_.pay_time.strftime(FMT),
+            "inside": ticket is not None,
+            "ticket_id": pay_.ticket_id, "status": pay_.status,
+            "prepaid_total": state.prepaid_total(plate)}
 
 
 # ---------------------------------------------------------------------------
@@ -244,12 +279,14 @@ def vehicle_status(plate: str):
                       "fee": last["fee"], "paid": last["paid"]}
 
     reservation = _reservation_view(res) if res is not None else None
+    prepaid_total = state.prepaid_total(p)
 
     if area is None:
         return {"ok": True, "plate": p, "inside": False, "area": None,
                 "vehicle_type": None, "ticket_id": None, "entry_time": None,
                 "duration_min": None, "queried_at": clock.now().strftime(FMT),
-                "reservation": reservation, "last_visit": last_visit}
+                "reservation": reservation, "last_visit": last_visit,
+                "prepaid_total": prepaid_total}
     duration = None
     if ticket is not None:
         duration = int((clock.now() - ticket.entry_time).total_seconds() // 60)
@@ -258,7 +295,8 @@ def vehicle_status(plate: str):
             "ticket_id": ticket.ticket_id if ticket else None,
             "entry_time": ticket.entry_time.strftime(FMT) if ticket else None,
             "duration_min": duration, "queried_at": clock.now().strftime(FMT),
-            "reservation": reservation, "last_visit": last_visit}
+            "reservation": reservation, "last_visit": last_visit,
+            "prepaid_total": prepaid_total}
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +309,8 @@ def records(plate: str | None = None, limit: int = 20):
     p = normalize_plate(plate) if plate else None
     return {"ok": True, "plate": p,
             "tickets": db.list_tickets(p, limit),
-            "reservations": db.list_reservations(p, limit)}
+            "reservations": db.list_reservations(p, limit),
+            "payments": db.list_payments(p, limit)}
 
 
 # ---------------------------------------------------------------------------

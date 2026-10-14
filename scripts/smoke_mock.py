@@ -246,6 +246,57 @@ def main() -> int:
           client.get("/records").json()["tickets"] == []
           and client.get("/records").json()["reservations"] == [])
 
+    # 19) 缴费通道 /pay（契约 v1.4）
+    client.post("/debug/reset")
+    r = client.post("/pay", json={"plate": "京A12345"})
+    check("TC-Mock-50 不在场不填金额 400 INVALID_PARAM",
+          r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM", str(r.json()))
+    r = client.post("/pay", json={"plate": "京A12345", "amount": 20})
+    body = r.json()
+    check("TC-Mock-51 不在场预缴 20 元 ok（P-0001，预缴中）",
+          r.status_code == 200 and body["ok"] and body["payment_id"] == "P-0001"
+          and body["amount"] == 20 and body["status"] == "active"
+          and body["prepaid_total"] == 20, str(body))
+    v = client.get("/vehicle/京A12345").json()
+    check("TC-Mock-51b /vehicle 显示预缴中 20 元",
+          v["prepaid_total"] == 20, str(v))
+    check("TC-Mock-51c /records 含缴费记录",
+          client.get("/records?plate=京A12345").json()["payments"][0]["payment_id"] == "P-0001")
+    r = client.post("/pay", json={"plate": "京A12345", "amount": -1})
+    check("TC-Mock-52 负金额 400 INVALID_PARAM",
+          r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM")
+
+    # 在场缴费：按出场费自动入账；出场冲抵
+    client.post("/debug/time", json={"set": "2026-11-10T10:00:00"})
+    client.post("/entry", json={"plate": "京A12345"})
+    client.post("/debug/time", json={"offset_minutes": 120})
+    r = client.post("/pay", json={"plate": "京A12345"})
+    body = r.json()
+    check("TC-Mock-53 在场不填金额=按出场费 12.00 预缴（绑定票据）",
+          body["ok"] and body["amount"] == 12.0 and body["ticket_id"] == "T-0001"
+          and body["inside"] is True, str(body))
+    r = client.post("/exit", json={"plate": "京A12345"})
+    body = r.json()
+    check("TC-Mock-54 出场冲抵：prepaid_used=32（20+12），payments 转 used",
+          body["prepaid_used"] == 32.0, str(body))
+    v = client.get("/vehicle/京A12345").json()
+    check("TC-Mock-54b 出场后预缴清零（已全部冲抵）", v["prepaid_total"] == 0, str(v))
+    pays = client.get("/records?plate=京A12345").json()["payments"]
+    check("TC-Mock-54c 两笔缴费均转 used（已冲抵）",
+          all(p["status"] == "used" for p in pays) and len(pays) == 2, str(pays))
+
+    # 重启恢复：预缴中缴费单保留
+    client.post("/debug/reset")
+    client.post("/pay", json={"plate": "京B88888", "amount": 15})
+    _st.state.reset()
+    _st.state.restore_from_db()
+    check("TC-Mock-55 模拟重启后预缴记录恢复（15 元预缴中）",
+          client.get("/vehicle/京B88888").json()["prepaid_total"] == 15)
+
+    client.post("/debug/reset")
+    check("TC-Mock-56 reset 清空缴费记录",
+          client.get("/records").json()["payments"] == [])
+
     print(f"\n{'ALL PASS' if not _fails else f'{len(_fails)} 项失败: {_fails}'}（共 {_count} 项）")
     return 1 if _fails else 0
 

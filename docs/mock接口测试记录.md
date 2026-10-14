@@ -7,11 +7,11 @@
 > 执行方式（项目根目录）：
 >
 > ```bash
-> .venv/Scripts/python.exe scripts/smoke_mock.py      # 接口冒烟 52 项（v1.3 起测试隔离：写 data/mock_smoke.sqlite）
+> .venv/Scripts/python.exe scripts/smoke_mock.py      # 接口冒烟 63 项（v1.3 起测试隔离：写 data/mock_smoke.sqlite）
 > .venv/Scripts/python.exe scripts/test_pricing.py    # 计费自测 9 项
 > ```
 >
-> 最近执行：**2026-10-14** → 接口 **ALL PASS（共 52 项）**、计费 **ALL PASS（共 9 项）**。
+> 最近执行：**2026-10-14** → 接口 **ALL PASS（共 63 项）**、计费 **ALL PASS（共 9 项）**。
 > 下表「实际」栏均为脚本真实输出。
 
 ---
@@ -118,6 +118,29 @@
 预约 → 看板即时显示"预约保留 1"；"记录"弹窗展示进入/离开时间、4.50 元、已缴费、预约状态；
 重启 mock 服务后 `GET /vehicle` 仍在场；用户问"刚才那笔停车费交了吗"→ Agent 答"已缴费 ✅、
 91 分钟、4.50 元"并主动更正不在场状态。
+
+### 1.9 v1.4 新增：缴费通道 POST /pay（2026-10-14 补测）
+
+需求方迭代：「添加一个缴费通道，用于模拟用户给车牌缴费。」
+
+| 用例号 | 操作 | 预期 | 实际 | 通过 |
+|---|---|---|---|---|
+| TC-Mock-50 | 不在场且不填金额 `POST /pay` | 400 `INVALID_PARAM` | 一致 | ✓ |
+| TC-Mock-51 | 不在场预缴 20 元 | `P-0001`、active、prepaid_total=20 | 一致 | ✓ |
+| TC-Mock-51b | `GET /vehicle` | `prepaid_total=20`（预缴可见） | 一致 | ✓ |
+| TC-Mock-51c | `GET /records` | `payments` 含该缴费单 | 一致 | ✓ |
+| TC-Mock-52 | 负金额缴费 | 400 `INVALID_PARAM` | 一致 | ✓ |
+| TC-Mock-53 | **在场**不填金额缴费 | 按出场费自动入账 12.00、绑定 T-0001 | 一致 | ✓ |
+| TC-Mock-54 | 出场结算 | `prepaid_used=32`（20+12 全额冲抵） | 一致 | ✓ |
+| TC-Mock-54b | 出场后 `GET /vehicle` | `prepaid_total=0`（已冲抵） | 一致 | ✓ |
+| TC-Mock-54c | 出场后 `GET /records` | 两笔缴费均 `used`（已冲抵） | 一致 | ✓ |
+| TC-Mock-55 | 模拟重启（restore_from_db） | 预缴记录恢复（15 元预缴中） | 一致 | ✓ |
+| TC-Mock-56 | `/debug/reset` | 缴费记录清空 | 一致 | ✓ |
+
+**接口用例合计 63 项，全部通过。** 浏览器端实测（截图 `docs/测试证据/vue-pay-channel.png`、
+`vue-pay-records.png`）：缴费通道卡片试算 ¥12.00（120 分钟）→ 缴费成功（P-0001 绑定 T-0001）→
+记录弹窗"缴费"表显示 P-0001 已冲抵（出场）→ 问 Agent"我已经缴费了吗"→ 答"预缴中 30.00 元，
+出场时自动冲抵"。
 
 ---
 
