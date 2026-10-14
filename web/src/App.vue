@@ -83,12 +83,28 @@
             <span class="t"><el-icon><Camera /></el-icon>车牌识别（双通道）</span>
           </div>
           <div class="upload-row">
+            <div class="gate-row">
+              <el-radio-group v-model="uploadAction" size="small">
+                <el-radio-button value="entry">入场</el-radio-button>
+                <el-radio-button value="exit">出场结算</el-radio-button>
+              </el-radio-group>
+              <el-select v-model="uploadArea" :disabled="uploadAction !== 'entry'"
+                         size="small" style="width: 150px; flex: none">
+                <el-option value="auto" label="自动分配区域" />
+                <el-option value="A" label="A 区 · 地面区" />
+                <el-option value="B" label="B 区 · 地下一层" />
+                <el-option value="C" label="C 区 · 地下二层" />
+              </el-select>
+            </div>
             <el-upload drag :show-file-list="false" accept="image/png,image/jpeg"
                        :before-upload="onUpload" :disabled="recognizing">
               <el-icon style="font-size: 34px; color: #93c5fd"><UploadFilled /></el-icon>
               <div style="font-size: 13px; color: var(--muted); margin-top: 6px">
                 点击或拖拽上传抓拍图片（模拟硬件抓拍图）<br />
-                <span style="font-size: 12px">支持 PNG / JPEG，≤10MB</span>
+                <span style="font-size: 12px">
+                  识别成功即{{ uploadAction === 'exit' ? '结算出场' : `登记入场（${uploadArea === 'auto' ? '自动分配区域' : uploadArea + ' 区'}）` }}
+                  · 支持 PNG / JPEG，≤10MB
+                </span>
               </div>
             </el-upload>
           </div>
@@ -99,6 +115,9 @@
             <el-button type="primary" :icon="Camera" :loading="recognizing" @click="onCapture">
               相机抓拍
             </el-button>
+          </div>
+          <div style="font-size: 12px; color: var(--muted); margin: -6px 16px 8px">
+            相机抓拍按物理位置：cam-1/2/3 = A/B/C 区入口（自动进所在区），cam-4 = 出口结算
           </div>
           <div v-if="recog" class="recog-result">
             <el-tag :type="BADGES[recog.source]?.type || 'info'" size="large" effect="dark" style="align-self: center">
@@ -393,6 +412,8 @@ const camera = ref('cam-1')
 const recognizing = ref(false)
 const recog = ref(null)
 const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场）
+const uploadAction = ref('entry')   // 上传动作：entry=登记入场 / exit=结算出场
+const uploadArea = ref('auto')      // 上传入场目标区域：auto=自动分配 / A/B/C
 
 function applyRecognize(data) {
   recog.value = data.result
@@ -412,6 +433,10 @@ async function onUpload(file) {
   try {
     const form = new FormData()
     form.append('file', file)
+    form.append('action', uploadAction.value)
+    if (uploadAction.value === 'entry') {
+      form.append('area', uploadArea.value === 'auto' ? '' : uploadArea.value)
+    }
     const { data } = await api.post('/recognize', form)
     applyRecognize(data)
   } catch (e) {

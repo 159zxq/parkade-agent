@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 from contextlib import contextmanager
 
 import httpx  # noqa: E402
-from fastapi import FastAPI, File, UploadFile  # noqa: E402
+from fastapi import FastAPI, File, Form, UploadFile  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -262,15 +262,21 @@ def chat(req: ChatReq):
 # ---------------------------------------------------------------------------
 # 识别（上传图片 / 相机抓拍）——均走双通道+仲裁，识别成功即触发闸机动作
 # ---------------------------------------------------------------------------
-def _gate_action(plate: str, *, camera_id: str | None) -> dict:
+CAMERA_AREA = {"cam-1": "A", "cam-2": "B", "cam-3": "C"}   # 入口相机物理所在区
+
+
+def _gate_action(plate: str, *, camera_id: str | None = None,
+                 action: str = "entry", area: str | None = None) -> dict:
     """闸机动作（识别成功后的放行语义，模拟硬件闸机联动）：
 
-    - cam-4（出口）→ 真实结算出场（返回费用明细）；
-    - 入口相机 cam-1/2/3 与网页上传 → 登记入场（预约车自动进预约区并核销）。
+    - 出口（`action="exit"` 或 cam-4）→ 真实结算出场（返回费用明细）；
+    - 入口 → 登记入场。区域分配优先级：显式 `area`（网页可选 A/B/C）
+      > 入口相机所在区（cam-1=A/cam-2=B/cam-3=C） > 自动分配（A→B→C 找空位）。
     返回 {action, ok, message, ...}；mock 业务错误/不可达时 ok=false（不失真：如实转述）。
     """
+    do_exit = action == "exit" or camera_id == "cam-4"
     try:
-        if camera_id == "cam-4":
+        if do_exit:
             r = httpx.post(f"{MOCK_BASE}/exit", json={"plate": plate}, timeout=15)
             data = r.json()
             if r.status_code == 200 and data.get("ok"):
@@ -288,6 +294,9 @@ def _gate_action(plate: str, *, camera_id: str | None) -> dict:
         payload: dict = {"plate": plate}
         if camera_id:
             payload["camera_id"] = camera_id
+        target_area = area or (CAMERA_AREA.get(camera_id) if camera_id else None)
+        if target_area:
+            payload["area"] = target_area
         r = httpx.post(f"{MOCK_BASE}/entry", json=payload, timeout=15)
         data = r.json()
         if r.status_code == 200 and data.get("ok"):
@@ -303,12 +312,21 @@ def _gate_action(plate: str, *, camera_id: str | None) -> dict:
             msg = f"车牌 {plate} 已在场内，未重复登记"
         return {"action": "entry", "ok": False, "message": msg}
     except httpx.HTTPError as e:
-        action = "exit" if camera_id == "cam-4" else "entry"
-        return {"action": action, "ok": False, "message": f"停车场服务不可达: {e}"}
+        return {"action": "exit" if do_exit else "entry", "ok": False,
+                "message": f"停车场服务不可达: {e}"}
 
 
 @app.post("/api/recognize")
-async def recognize(file: UploadFile = File(...)):
+async def recognize(file: UploadFile = File(...), action: str = Form("entry"),
+                    area: str = Form("")):
+    """上传识别（表单可带 action=entry|exit 与 area=A|B|C|空=自动）。
+
+    识别成功即执行闸机动作：entry → 登记入场（area 指定区域，空则自动分配）；
+    exit → 结算出场（与出口相机一致）。
+    """
+    action = (action or "entry").strip().lower()
+    if action not in ("entry", "exit"):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "action 只能为 entry 或 exit"})
     data = await file.read()
     if not data:
         return JSONResponse(status_code=400, content={"ok": False, "error": "空文件"})
@@ -319,8 +337,12 @@ async def recognize(file: UploadFile = File(...)):
     with _agent_lock:  # 与聊天共用锁：识别链路含在线 VLM 调用，避免与其并发挤占
         result = recognize_upload(data, file.filename or "upload.jpg")
     result["image_url"] = _media_url("uploads", Path(result["image_path"]).name)
-    # 闸机联动：识别成功（仲裁出车牌）即按"入口闸机"登记入场
-    gate = _gate_action(result["plate"], camera_id=None) if result.get("plate") else None
+    # 闸机联动：识别成功（仲裁出车牌）即按所选动作执行（入场可选区域 / 出场结算）
+    area_sel = (area or "").strip().upper() or None
+    if area_sel and area_sel not in ("A", "B", "C"):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "area 只能为 A/B/C 或留空"})
+    gate = (_gate_action(result["plate"], action=action, area=area_sel)
+            if result.get("plate") else None)
     return {"ok": True, "result": result, "gate": gate}
 
 
@@ -334,7 +356,7 @@ def capture(req: CaptureReq):
         result = recognize_plate(req.camera_id, "normal")
     if result.get("image_path"):
         result["image_url"] = _media_url("captures", Path(result["image_path"]).name)
-    # 闸机联动：cam-4 → 结算出场；入口相机 → 登记入场
+    # 闸机联动：cam-1/2/3 = 各区入口（进所在区）；cam-4 = 出口（结算出场）
     gate = _gate_action(result["plate"], camera_id=req.camera_id) if result.get("plate") else None
     return {"ok": True, "result": result, "gate": gate}
 

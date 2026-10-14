@@ -167,6 +167,7 @@ html, body, #app {
   background: #f8fafc;
 }
 .upload-row { padding: 14px 16px 4px; }
+.gate-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; }
 .camera-row { display: flex; gap: 10px; padding: 10px 16px 14px; align-items: center; }
 
 /* 看板 */

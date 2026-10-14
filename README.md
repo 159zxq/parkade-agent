@@ -27,6 +27,33 @@ uvicorn server.app:app --port 8100          # 终端2：Web 服务（含前端�
 
 `.env` 需按**三个独立配置块**填写（见 `.env.example`）：`LLM_*`（主脑，qwen-plus / deepseek-chat）、`VISION_*`（车牌视觉通道，qwen-vl-plus / glm-4v-flash）、`EMBEDDING_*`（知识库嵌入，text-embedding-v3）。三者分别配置、禁止混用，换任一个只改对应那一块；代码里统一经 `common/config.py` 读取。填好后运行 `python scripts/check_api.py` 逐块验证。
 
+## 一键重置全部数据（演示 / 答辩前）
+
+`scripts/reset_all.py` 把所有**运行期数据**恢复到初始状态（服务可开可关均适用）：
+
+```bash
+# 交互确认（推荐）
+python scripts/reset_all.py
+
+# 跳过确认；保留运行期图片
+python scripts/reset_all.py --yes
+python scripts/reset_all.py --yes --keep-images
+```
+
+重置内容（四项）：
+
+| 项 | 数据 | 重置后 |
+|---|---|---|
+| Mock 服务 | `data/mock.sqlite`（进出场/缴费/预约记录）+ 内存车位/票据 + 虚拟时钟 | 车位复位（A/B/C = 27/52/58 空闲）、记录清空、时钟归零；服务在线时走 `POST /debug/reset`，离线则直接清库（下次启动即初始） |
+| Web 用户与对话 | `data/web.sqlite`（users / messages） | 清空全部用户与聊天历史，重建初始「演示用户（京A12345）」，用户编号从 1 重新开始 |
+| Agent 多轮记忆 | `data/checkpoints.sqlite`（SqliteSaver 全部 thread） | 所有会话记忆清空（此前对话不再被复述） |
+| 运行期图片 | `data/captures/`、`data/uploads/` | 抓拍图与上传图清空（`--keep-images` 可保留） |
+
+重置后**无需重启服务**，刷新浏览器页面即可。种子数据（车位表、相机表、费率、知识库、
+`docs/样例/` 图片）不受影响。
+
+> Mock 在线时的等价位：`curl -X POST http://127.0.0.1:8000/debug/reset`（仅复位 Mock，不清用户/对话/记忆）。
+
 ## 目录导览
 
 | 目录 | 内容 | 负责人 |
