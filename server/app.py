@@ -260,8 +260,53 @@ def chat(req: ChatReq):
 
 
 # ---------------------------------------------------------------------------
-# 识别（上传图片 / 相机抓拍）——均走双通道+仲裁
+# 识别（上传图片 / 相机抓拍）——均走双通道+仲裁，识别成功即触发闸机动作
 # ---------------------------------------------------------------------------
+def _gate_action(plate: str, *, camera_id: str | None) -> dict:
+    """闸机动作（识别成功后的放行语义，模拟硬件闸机联动）：
+
+    - cam-4（出口）→ 真实结算出场（返回费用明细）；
+    - 入口相机 cam-1/2/3 与网页上传 → 登记入场（预约车自动进预约区并核销）。
+    返回 {action, ok, message, ...}；mock 业务错误/不可达时 ok=false（不失真：如实转述）。
+    """
+    try:
+        if camera_id == "cam-4":
+            r = httpx.post(f"{MOCK_BASE}/exit", json={"plate": plate}, timeout=15)
+            data = r.json()
+            if r.status_code == 200 and data.get("ok"):
+                return {"action": "exit", "ok": True,
+                        "message": f"出口结算完成：{data['duration_min']} 分钟，"
+                                   f"应收 {data['total']:.2f} 元（已缴费，可放行）",
+                        "ticket_id": data["ticket_id"], "duration_min": data["duration_min"],
+                        "total": data["total"], "paid": data.get("paid", True)}
+            code = (data.get("error") or {}).get("code")
+            msg = (data.get("error") or {}).get("message") or "出场失败"
+            if code == "NOT_INSIDE":
+                msg = f"车牌 {plate} 不在场内，无法结算出场"
+            return {"action": "exit", "ok": False, "message": msg}
+
+        payload: dict = {"plate": plate}
+        if camera_id:
+            payload["camera_id"] = camera_id
+        r = httpx.post(f"{MOCK_BASE}/entry", json=payload, timeout=15)
+        data = r.json()
+        if r.status_code == 200 and data.get("ok"):
+            return {"action": "entry", "ok": True,
+                    "message": f"已入场：{data['area']} 区 · 票号 {data['ticket_id']}"
+                               f"（入场时间 {data['entry_time']}）",
+                    "ticket_id": data["ticket_id"], "area": data["area"],
+                    "entry_time": data["entry_time"],
+                    "reservation_consumed": data.get("reservation_consumed", False)}
+        code = (data.get("error") or {}).get("code")
+        msg = (data.get("error") or {}).get("message") or "入场失败"
+        if code == "ALREADY_INSIDE":
+            msg = f"车牌 {plate} 已在场内，未重复登记"
+        return {"action": "entry", "ok": False, "message": msg}
+    except httpx.HTTPError as e:
+        action = "exit" if camera_id == "cam-4" else "entry"
+        return {"action": action, "ok": False, "message": f"停车场服务不可达: {e}"}
+
+
 @app.post("/api/recognize")
 async def recognize(file: UploadFile = File(...)):
     data = await file.read()
@@ -274,7 +319,9 @@ async def recognize(file: UploadFile = File(...)):
     with _agent_lock:  # 与聊天共用锁：识别链路含在线 VLM 调用，避免与其并发挤占
         result = recognize_upload(data, file.filename or "upload.jpg")
     result["image_url"] = _media_url("uploads", Path(result["image_path"]).name)
-    return {"ok": True, "result": result}
+    # 闸机联动：识别成功（仲裁出车牌）即按"入口闸机"登记入场
+    gate = _gate_action(result["plate"], camera_id=None) if result.get("plate") else None
+    return {"ok": True, "result": result, "gate": gate}
 
 
 class CaptureReq(BaseModel):
@@ -287,7 +334,9 @@ def capture(req: CaptureReq):
         result = recognize_plate(req.camera_id, "normal")
     if result.get("image_path"):
         result["image_url"] = _media_url("captures", Path(result["image_path"]).name)
-    return {"ok": True, "result": result}
+    # 闸机联动：cam-4 → 结算出场；入口相机 → 登记入场
+    gate = _gate_action(result["plate"], camera_id=req.camera_id) if result.get("plate") else None
+    return {"ok": True, "result": result, "gate": gate}
 
 
 def _media_url(kind: str, filename: str) -> str:

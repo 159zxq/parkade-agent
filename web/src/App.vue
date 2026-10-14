@@ -110,6 +110,8 @@
               <el-tag type="info" effect="plain">视觉模型：{{ recog.vlm?.plate || '未识别' }}</el-tag>
               <el-tag type="info" effect="plain">{{ recog.elapsed_ms }} ms</el-tag>
             </div>
+            <el-alert v-if="gate" :title="gate.message" :type="gate.ok ? 'success' : 'warning'"
+                      :closable="false" show-icon />
             <el-alert v-if="recog.error" :title="recog.error" type="warning" :closable="false" show-icon />
             <img v-if="recog.image_url" :src="recog.image_url" class="recog-img" alt="抓拍图片" />
           </div>
@@ -390,6 +392,20 @@ async function clearChat() {
 const camera = ref('cam-1')
 const recognizing = ref(false)
 const recog = ref(null)
+const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场）
+
+function applyRecognize(data) {
+  recog.value = data.result
+  gate.value = data.gate || null
+  if (data.gate) {
+    if (data.gate.ok) {
+      ElMessage.success(data.gate.message)
+    } else {
+      ElMessage.warning(data.gate.message)
+    }
+  }
+  loadLots()   // 入场/出场后看板即时刷新（记录库同时留痕）
+}
 
 async function onUpload(file) {
   recognizing.value = true
@@ -397,7 +413,7 @@ async function onUpload(file) {
     const form = new FormData()
     form.append('file', file)
     const { data } = await api.post('/recognize', form)
-    recog.value = data.result
+    applyRecognize(data)
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '识别请求失败')
   } finally {
@@ -410,7 +426,7 @@ async function onCapture() {
   recognizing.value = true
   try {
     const { data } = await api.post('/capture', { camera_id: camera.value })
-    recog.value = data.result
+    applyRecognize(data)
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '抓拍失败')
   } finally {
@@ -520,7 +536,8 @@ async function resetTime() {
 async function resetAll() {
   await api.post('/debug/reset')
   recog.value = null
-  ElMessage.success('车位/票据/时间已全部复位')
+  gate.value = null
+  ElMessage.success('车位/票据/记录/时间已全部复位')
   await loadLots()
 }
 
