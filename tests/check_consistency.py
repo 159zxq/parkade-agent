@@ -1,6 +1,6 @@
 """费率×语料一致性自动核对（A5b 测试素材，离线可跑，不调 API）。
 
-运行（项目根目录）：python scripts/check_consistency.py
+运行（项目根目录）：python tests/check_consistency.py
 
 检查四项：
 1. rates.yaml → 语料：每个费率数字必须在语料中出现（防"解释与计算打架"）；

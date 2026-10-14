@@ -211,7 +211,7 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py   # 
 车牌绘图规格（**蓝底白字、260×82、52pt**）并非随意选定：项目初期对多组参数做了识别实测，
 发现 220×70/44pt 时"京B88888"识别失败，而 **260×82/52pt 下 HyperLPR3 识别 3/3**
 （置信度 0.958–0.981）。该规格因此**冻结进接口契约 §2**，任何改动前必须重跑
-`scripts/check_lpr.py` 验证。参考样例见 `docs/样例/plate_*.png`。
+`tests/check_lpr.py` 验证。参考样例见 `docs/样例/plate_*.png`。
 
 这一"用实测数据冻结接口规格"的做法，避免了"图改了、识别率掉了"的返工，是本模块与识别模块协作的关键接口。
 
@@ -221,8 +221,8 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py   # 
 
 | 测试 | 脚本 | 规模 | 结果 |
 |---|---|---|---|
-| 接口冒烟 | `scripts/smoke_mock.py` | 33 项 | ALL PASS |
-| 计费一致性 | `scripts/test_pricing.py` | 9 项 | ALL PASS |
+| 接口冒烟 | `tests/smoke_mock.py` | 63 项 | ALL PASS |
+| 计费一致性 | `tests/test_pricing.py` | 9 项 | ALL PASS |
 | 时钟纪律 | grep 自查 | — | 通过 |
 | 相机图规格 | 尺寸/格式校验 | — | 通过 |
 

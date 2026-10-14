@@ -25,19 +25,19 @@ uvicorn server.app:app --port 8100          # 终端2：Web 服务（含前端�
 
 前端开发模式（改 Vue 代码热更新）：`cd web && npm run dev`（http://localhost:5173，`/api` 自动代理到 8100）。
 
-`.env` 需按**三个独立配置块**填写（见 `.env.example`）：`LLM_*`（主脑，qwen-plus / deepseek-chat）、`VISION_*`（车牌视觉通道，qwen-vl-plus / glm-4v-flash）、`EMBEDDING_*`（知识库嵌入，text-embedding-v3）。三者分别配置、禁止混用，换任一个只改对应那一块；代码里统一经 `common/config.py` 读取。填好后运行 `python scripts/check_api.py` 逐块验证。
+`.env` 需按**三个独立配置块**填写（见 `.env.example`）：`LLM_*`（主脑，qwen-plus / deepseek-chat）、`VISION_*`（车牌视觉通道，qwen-vl-plus / glm-4v-flash）、`EMBEDDING_*`（知识库嵌入，text-embedding-v3）。三者分别配置、禁止混用，换任一个只改对应那一块；代码里统一经 `common/config.py` 读取。填好后运行 `python tests/check_api.py` 逐块验证。
 
 ## 一键重置全部数据（演示 / 答辩前）
 
-`scripts/reset_all.py` 把所有**运行期数据**恢复到初始状态（服务可开可关均适用）：
+`tests/reset_all.py` 把所有**运行期数据**恢复到初始状态（服务可开可关均适用）：
 
 ```bash
 # 交互确认（推荐）
-python scripts/reset_all.py
+python tests/reset_all.py
 
 # 跳过确认；保留运行期图片
-python scripts/reset_all.py --yes
-python scripts/reset_all.py --yes --keep-images
+python tests/reset_all.py --yes
+python tests/reset_all.py --yes --keep-images
 ```
 
 重置内容（四项）：
@@ -64,7 +64,7 @@ python scripts/reset_all.py --yes --keep-images
 | `agent/` | LangGraph Agent、工具、双通道识别与仲裁、RAG 检索（含中间件） | A |
 | `server/` | Web 服务：用户管理（SQLite）/聊天/上传识别/看板调试代理/静态托管 | A |
 | `web/` | **Vue3 + Element Plus 前端**：用户切换、聊天（引用折叠）、上传/抓拍识别、车位看板调试、进出场记录 | A |
-| `scripts/` | 冒烟/测试脚本、链路自检、端到端演示 | A/B |
+| `tests/` | 全部测试与自检脚本：冒烟 `smoke_mock`、计费 `test_pricing`、视觉 `test_vision`、E2E `test_e2e` 等 | A/B |
 | `docs/` | 接口契约、三人执行方案、任务板、AI 档案、例会纪要、报告 | 全组 |
 
 ## 文档入口（先读这两份再动手）

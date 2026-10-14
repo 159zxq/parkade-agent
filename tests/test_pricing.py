@@ -1,4 +1,4 @@
-"""计费引擎自测（契约 §4 工作示例 + 边界）。运行：python scripts/test_pricing.py"""
+"""计费引擎自测（契约 §4 工作示例 + 边界）。运行：python tests/test_pricing.py"""
 from __future__ import annotations
 
 import sys

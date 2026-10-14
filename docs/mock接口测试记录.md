@@ -1,14 +1,14 @@
 # Mock 服务接口测试记录（TC-Mock）
 
-> 负责人：成员B｜模块：`mock_service/`｜执行脚本：`scripts/smoke_mock.py`、`scripts/test_pricing.py`
+> 负责人：成员B｜模块：`mock_service/`｜执行脚本：`tests/smoke_mock.py`、`tests/test_pricing.py`
 > 对接依据：《接口契约》v1 §3（字段与规则冻结）
 > 覆盖：B1–B6 全部接口 + 计费一致性 + 时钟纪律
 >
 > 执行方式（项目根目录）：
 >
 > ```bash
-> .venv/Scripts/python.exe scripts/smoke_mock.py      # 接口冒烟 63 项（v1.3 起测试隔离：写 data/mock_smoke.sqlite）
-> .venv/Scripts/python.exe scripts/test_pricing.py    # 计费自测 9 项
+> .venv/Scripts/python.exe tests/smoke_mock.py      # 接口冒烟 63 项（v1.3 起测试隔离：写 data/mock_smoke.sqlite）
+> .venv/Scripts/python.exe tests/test_pricing.py    # 计费自测 9 项
 > ```
 >
 > 最近执行：**2026-10-14** → 接口 **ALL PASS（共 63 项）**、计费 **ALL PASS（共 9 项）**。
@@ -113,7 +113,7 @@
 | TC-Mock-46b | 恢复后查看板 | 占用计数一致（A occupied=4） | 一致 | ✓ |
 | TC-Mock-47 | `/debug/reset` | 记录库清空（tickets=[]、reservations=[]） | 一致 | ✓ |
 
-**接口用例合计 52 项，全部通过（`scripts/smoke_mock.py` 复跑）。**
+**接口用例合计 52 项，全部通过（`tests/smoke_mock.py` 复跑）。**
 浏览器端实测（截图 `docs/测试证据/vue-v13-*.png`）：对话让车入场 → 看板 5 秒内自动刷新（27→26）；
 预约 → 看板即时显示"预约保留 1"；"记录"弹窗展示进入/离开时间、4.50 元、已缴费、预约状态；
 重启 mock 服务后 `GET /vehicle` 仍在场；用户问"刚才那笔停车费交了吗"→ Agent 答"已缴费 ✅、
@@ -147,7 +147,7 @@
 
 ## 2. 计费一致性用例（TC-Price-xx，`common/pricing.py` 由成员A 维护）
 
-执行 `python scripts/test_pricing.py` → **ALL PASS（共 9 项）**。
+执行 `python tests/test_pricing.py` → **ALL PASS（共 9 项）**。
 
 | 用例号 | 场景 | 期望 | 实际 | 通过 |
 |---|---|---|---|---|
@@ -187,7 +187,7 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
 | 字体 | 微软雅黑 Bold 52pt | msyhbd 52pt | ✓ |
 | 水印 | 右下角 `{camera_id} {虚拟时间}` | 一致 | ✓ |
 
-> 该规格经 A 实测 HyperLPR3 识别 3/3（置信度 0.958–0.981）；改动前须重跑 `scripts/check_lpr.py`。
+> 该规格经 A 实测 HyperLPR3 识别 3/3（置信度 0.958–0.981）；改动前须重跑 `tests/check_lpr.py`。
 
 ---
 
@@ -197,9 +197,8 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
    统一走 A 的 `common/pricing.py`。
 2. `mock_service/` 现为完整实现（A 的 stub 中所有 `TODO(Bx)` 已替换为真逻辑）；
    A 的常量表 `CAMERA_TABLE` / `INITIAL_OCCUPIED` 未改动，与契约 §2/§5 一致。
-3. `scripts/smoke_stub.py`（A 的 stub 冒烟）中「/exit total=12.00」一项曾因 stub 假数据失效——
-   **A 决定（10-12）**：保留该文件作 A0 阶段证据链，断言改为「虚拟时间注入（10:00→+120min→12.00）」，
-   不再依赖 stub 假数据；修正后 **12/12 全绿**。
+3. A0 阶段的 stub 冒烟脚本已随代码精简移除（其断言已全部并入 `tests/smoke_mock.py`）；
+   历史证据见 AI 档案 2026-10-11/10-12。
 4. 本记录即 B7b 定稿版本，覆盖 B1–B6 全部接口 + 计费 + 时钟纪律 + 相机图规格。
 5. **v1.3 记录库（10-14）**：票据/预约落盘 `data/mock.sqlite`（进入时间/离开时间/缴费状态/预约情况），
    进程重启自动恢复在场与未过期预约；`/debug/reset` 清库回初始。冒烟脚本经 `MOCK_DB` 环境变量

@@ -1,9 +1,8 @@
-"""Mock 服务完整冒烟测试（成员B 任务卡 B7）——真实逻辑断言。
+"""Mock 服务完整冒烟测试 —— 真实逻辑断言。
 
-在 A 的 `scripts/smoke_stub.py` 基础上扩写：用 TestClient 直打全部路由，
-断言关键字段与状态变化，末尾打印 `ALL PASS（共 N 项）`。
+用 TestClient 直打全部路由，断言关键字段与状态变化，末尾打印 `ALL PASS（共 N 项）`。
 
-运行（项目根目录）：python scripts/smoke_mock.py
+运行（项目根目录）：python tests/smoke_mock.py
 测试隔离：默认写独立库 data/mock_smoke.sqlite（MOCK_DB 可覆盖），
 不影响运行中服务的 data/mock.sqlite。
 """

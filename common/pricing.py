@@ -10,7 +10,7 @@ mock_service 的 /exit 与 agent 工具 calculate_exit_fee 都必须调用本模
 4. 封顶：按自然日汇总当日各段费用后应用当日封顶，跨天各自封顶再累加；
 5. monthly=True（月卡车）总价 0。
 
-自测：python scripts/test_pricing.py
+自测：python tests/test_pricing.py
 """
 from __future__ import annotations
 

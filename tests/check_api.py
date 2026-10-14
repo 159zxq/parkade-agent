@@ -1,6 +1,6 @@
 """三模型独立链路验证（A0b，需真实 key）——跑通后即可群发"契约冻结 v1"。
 
-运行：python scripts/check_api.py [llm|vision|embedding]
+运行：python tests/check_api.py [llm|vision|embedding]
   不带参数 = 逐块验证三组；带参数 = 只验证其中一组。
 前置：.env 按 .env.example 的**三个独立配置块**填好
 （LLM_* / VISION_* / EMBEDDING_*，三组互不混用）。

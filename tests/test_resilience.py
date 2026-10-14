@@ -1,6 +1,6 @@
 """韧性测试（A5b）——持久化复验 + 异常流（mock 停服 / 重复入场）。
 
-运行（需 mock 在线）：python scripts/test_resilience.py
+运行（需 mock 在线）：python tests/test_resilience.py
 
 覆盖测试方案 §8 的「持久化」「异常流」两行：
 1. Chroma 持久化：两个独立子进程执行同一检索，chunk 序列一致（跨进程重载生效）；
@@ -94,10 +94,10 @@ def main() -> int:
     except OSError:
         pass
     httpx.post(f"{MOCK_BASE}/debug/reset", timeout=10)
-    p1 = run(["scripts/check_agent.py", "--phase", "1"], timeout=300)
+    p1 = run(["tests/check_agent.py", "--phase", "1"], timeout=300)
     record("phase1（进程1：两轮对话写入记忆）", p1.stdout + p1.stderr)
     check("phase1（新进程完成两轮对话）", p1.returncode == 0, p1.stdout[-400:])
-    p2 = run(["scripts/check_agent.py", "--phase", "2"], timeout=240)
+    p2 = run(["tests/check_agent.py", "--phase", "2"], timeout=240)
     record("phase2（进程2：复述上一进程的记忆）", p2.stdout + p2.stderr)
     check("phase2（另一进程复述记忆成功）", p2.returncode == 0, p2.stdout[-400:])
 

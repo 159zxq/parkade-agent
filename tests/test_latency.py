@@ -1,8 +1,8 @@
 """延迟实测（A5b）——对话链路与识别链路分开计账。
 
 运行（需 mock 在线、知识库已建）：
-    python scripts/test_latency.py                 # 对话 20 轮 + 识别 6 次
-    python scripts/test_latency.py --dialog 10 --vision 4
+    python tests/test_latency.py                 # 对话 20 轮 + 识别 6 次
+    python tests/test_latency.py --dialog 10 --vision 4
 
 输出：min/avg/P50/P95/max 统计 + 逐次明细；存 docs/测试证据/latency_<时间戳>.md。
 说明：识别链路含视觉 API（数秒级），与对话链路分开报告是契约与开发方案的既定口径。

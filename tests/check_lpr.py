@@ -1,7 +1,7 @@
 """LPR 可行性验证（A0 风险排除）——合成车牌图 → HyperLPR3 识别，打印结果。
 
 这一步决定 B5 的合成图规格（底色/字体/字号）与 A2 的识别链路是否成立。
-运行：python scripts/check_lpr.py
+运行：python tests/check_lpr.py
 """
 from __future__ import annotations
 

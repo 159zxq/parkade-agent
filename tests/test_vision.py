@@ -1,8 +1,8 @@
 """双通道识别测试 —— 契约 §6.3 仲裁矩阵 + 实拍三变体（A2 验收）。
 
 运行（需 mock 服务在线：uvicorn mock_service.main:app --port 8000）：
-    python scripts/test_vision.py          # 全量：仲裁单测 + 实拍
-    python scripts/test_vision.py --unit   # 仅离线仲裁单测（不联网）
+    python tests/test_vision.py          # 全量：仲裁单测 + 实拍
+    python tests/test_vision.py --unit   # 仅离线仲裁单测（不联网）
 
 实拍预期（三变体的真实分支以本次输出为准，记录到 docs/测试证据/）：
     normal   → both_agree 或 ocr_only（OCR 必成功；VLM 视服务波动）

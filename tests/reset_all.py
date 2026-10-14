@@ -10,9 +10,9 @@
 4. **运行期图片**（data/captures、data/uploads）：抓拍图与上传图（`--keep-images` 可保留）。
 
 用法（项目根目录，两个服务可开可关均适用）：
-    python scripts/reset_all.py            # 交互确认
-    python scripts/reset_all.py --yes      # 跳过确认（脚本/自动化）
-    python scripts/reset_all.py --yes --keep-images   # 保留图片
+    python tests/reset_all.py            # 交互确认
+    python tests/reset_all.py --yes      # 跳过确认（脚本/自动化）
+    python tests/reset_all.py --yes --keep-images   # 保留图片
 
 重置后**无需重启服务**，刷新浏览器页面即可；种子数据（车位表、相机表、费率、
 知识库、docs/样例 图）不受影响。
