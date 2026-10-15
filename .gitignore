@@ -39,3 +39,6 @@ data/web.sqlite
 # PPT 生成工具工作目录与渲染核对图（过程产物，不入库）
 .slidep/
 docs/答辩PPT_Mock/preview/
+
+# 需求方本地测试素材（车牌图等，不入库）
+车牌/
