@@ -214,6 +214,13 @@ def _vehicle_context(user_row) -> str | None:
         lines.append(f"入场时间：{v['entry_time']}｜已停放：{v['duration_min']} 分钟")
         if v.get("ticket_id"):
             lines.append(f"票据号：{v['ticket_id']}")
+        due = v.get("due")
+        if due is not None:
+            if due > 0.001:
+                lines.append(f"费用状态：**未结清，待缴 {due:.2f} 元**"
+                             f"（须先在缴费看板缴清，出口闸机才会放行）")
+            else:
+                lines.append("费用状态：**已结清**（出口闸机可直接放行）")
     else:
         lines.append("状态：**不在场**（当前未入场）")
     monthly = v.get("monthly")
@@ -286,15 +293,18 @@ def _gate_action(plate: str, *, camera_id: str | None = None,
             r = httpx.post(f"{MOCK_BASE}/exit", json={"plate": plate}, timeout=15)
             data = r.json()
             if r.status_code == 200 and data.get("ok"):
+                paid_txt = "月卡免计费" if data.get("monthly") else "已结清，可放行"
                 return {"action": "exit", "ok": True,
-                        "message": f"出口结算完成：{data['duration_min']} 分钟，"
-                                   f"应收 {data['total']:.2f} 元（已缴费，可放行）",
+                        "message": f"出口验票完成：{data['duration_min']} 分钟，"
+                                   f"应缴 {data['total']:.2f} 元（{paid_txt}）",
                         "ticket_id": data["ticket_id"], "duration_min": data["duration_min"],
                         "total": data["total"], "paid": data.get("paid", True)}
             code = (data.get("error") or {}).get("code")
             msg = (data.get("error") or {}).get("message") or "出场失败"
             if code == "NOT_INSIDE":
-                msg = f"车牌 {plate} 不在场内，无法结算出场"
+                msg = f"车牌 {plate} 不在场内，无法验票出场"
+            elif code == "FEE_UNPAID":
+                msg = f"未结清费用，出口不予放行——{msg}"
             return {"action": "exit", "ok": False, "message": msg}
 
         payload: dict = {"plate": plate}

@@ -41,28 +41,44 @@ html, body, #app {
 .app-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 210px minmax(380px, 1fr) minmax(400px, 460px);
+  /* 四栏：用户 | 对话（收窄） | 车牌识别 | 缴费+看板 */
+  grid-template-columns: 190px minmax(300px, 1fr) minmax(320px, 380px) minmax(340px, 420px);
   grid-template-rows: minmax(0, 1fr);   /* 行高锁死在可视区，内容超高时改为栏内滚动 */
-  gap: 14px;
-  padding: 14px;
+  gap: 12px;
+  padding: 12px;
   overflow: hidden;
   min-height: 0;
 }
 
-/* 右栏（识别 + 看板）：独立滚动，不再撑高整行把对话/看板挤出屏幕 */
+/* 第三栏（车牌识别）：独立定位，卡片内滚动 */
+.recog-pane {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 第四栏（缴费 + 车位看板）：独立滚动 */
 .right-pane {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
 }
 .right-pane > .card { flex: 0 0 auto; }
 
-@media (max-width: 1250px) {
-  /* 窄屏：改单列纵向流（不用两行 grid——高内容行会把 1fr 行压到 0，
-     导致用户面板/聊天栏被"挤没"）。整体滚动，各卡片自然高度。 */
+@media (max-width: 1450px) {
+  /* 中窄屏：四栏改"两行"——用户+对话一行、识别+缴费看板一行 */
+  .app-main {
+    grid-template-columns: 190px minmax(300px, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .recog-pane { grid-column: 1; grid-row: 2; }
+  .right-pane { grid-column: 2; grid-row: 2; overflow-y: auto; }
+}
+
+@media (max-width: 1100px) {
+  /* 窄屏：单列纵向流（整体滚动，各卡片自然高度） */
   .app-main {
     display: flex;
     flex-direction: column;
@@ -70,11 +86,12 @@ html, body, #app {
   }
   .users-pane { flex: 0 0 auto; max-height: 220px; }
   .chat-pane { flex: 0 0 auto; height: 560px; }   /* 固定高：输入框始终在卡片底部可见 */
+  .recog-pane { flex: 0 0 auto; overflow: visible; }
   .right-pane {
     flex: 0 0 auto;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    gap: 12px;
     overflow: visible;
   }
   .right-pane > .card { min-width: 0; }
@@ -102,8 +119,8 @@ html, body, #app {
 }
 .card-title .t { display: flex; align-items: center; gap: 8px; }
 
-/* 窄屏下右栏卡片内的图片同样限高，避免单列过高 */
-@media (max-width: 1250px) {
+/* 窄屏下识别卡片内的图片同样限高 */
+@media (max-width: 1100px) {
   .recog-img { max-height: 220px; }
 }
 

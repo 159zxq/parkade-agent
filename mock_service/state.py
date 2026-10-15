@@ -61,6 +61,7 @@ class Ticket:
     area: str
     vehicle_type: str
     entry_time: dt.datetime
+    paid_amount: float = 0.0   # 已结清金额（v1.6：出场前须结清当前停车费）
 
 
 @dataclass
@@ -123,7 +124,8 @@ class State:
         now = clock.now()
         for row in db.load_active_tickets():
             t = Ticket(row["ticket_id"], row["plate"], row["area"],
-                       row["vehicle_type"], dt.datetime.fromisoformat(row["entry_time"]))
+                       row["vehicle_type"], dt.datetime.fromisoformat(row["entry_time"]),
+                       float(row["paid_amount"] or 0))
             self.tickets[row["plate"]] = t
             self.occupied[row["plate"]] = row["area"]
         for row in db.load_active_reservations():
@@ -230,6 +232,7 @@ class State:
         return ticket
 
     # —— 缴费（v1.5：现缴 spot 当场付清 / 月卡 monthly 有效期内免计费）——
+    # v1.6：现缴金额入账到当前票据（paid_amount），出场闸机据此校验结清
     def next_payment_id(self) -> str:
         self._payment_seq += 1
         return f"P-{self._payment_seq:04d}"
@@ -240,6 +243,11 @@ class State:
         self.payments[pay.payment_id] = pay
         db.save_payment(pay.payment_id, pay.plate, pay.ptype, pay.amount,
                         pay.pay_time, pay.valid_until)
+        if ptype == "spot":
+            ticket = self.tickets.get(plate)
+            if ticket is not None:   # 现缴入账当前票据（未结清金额随之减少）
+                ticket.paid_amount = round(ticket.paid_amount + pay.amount, 2)
+                db.add_ticket_payment(ticket.ticket_id, pay.amount)
         return pay
 
     def monthly_card(self, plate: str) -> Payment | None:

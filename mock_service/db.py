@@ -65,7 +65,12 @@ class MockDB:
                     "ticket_id TEXT PRIMARY KEY, plate TEXT NOT NULL, area TEXT NOT NULL,"
                     "vehicle_type TEXT NOT NULL, entry_time TEXT NOT NULL,"
                     "exit_time TEXT, duration_min INTEGER, fee REAL,"
-                    "paid INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active')")
+                    "paid INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',"
+                    "paid_amount REAL NOT NULL DEFAULT 0)")
+                # 旧库迁移：tickets 无 paid_amount 列时补列（v1.6：出场前须结清）
+                tcols = [r[1] for r in conn.execute("PRAGMA table_info(tickets)").fetchall()]
+                if "paid_amount" not in tcols:
+                    conn.execute("ALTER TABLE tickets ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0")
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS reservations ("
                     "reserve_id TEXT PRIMARY KEY, plate TEXT NOT NULL, area TEXT,"
@@ -100,10 +105,15 @@ class MockDB:
         """入场落库（进入时间；离开时间/费用/缴费状态留空，status=active）。"""
         self._run(
             "INSERT OR REPLACE INTO tickets (ticket_id, plate, area, vehicle_type,"
-            " entry_time, exit_time, duration_min, fee, paid, status)"
-            " VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, 0, 'active')",
+            " entry_time, exit_time, duration_min, fee, paid, status, paid_amount)"
+            " VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, 0, 'active', 0)",
             (ticket.ticket_id, ticket.plate, ticket.area, ticket.vehicle_type,
              ticket.entry_time.strftime(_FMT)))
+
+    def add_ticket_payment(self, ticket_id: str, amount: float) -> None:
+        """累计票据已结清金额（现缴入账；v1.6 出场拦截用）。"""
+        self._run("UPDATE tickets SET paid_amount = paid_amount + ? WHERE ticket_id=?",
+                  (float(amount), ticket_id))
 
     def mark_exited(self, ticket_id: str, exit_time: dt.datetime,
                     duration_min: int | None, fee: float | None,
@@ -147,6 +157,10 @@ class MockDB:
     def max_ticket_seq(self) -> int:
         rows = self._query("SELECT MAX(CAST(SUBSTR(ticket_id, 3) AS INTEGER)) m FROM tickets")
         return int(rows[0]["m"] or 0)
+
+    def clear_ticket_paid(self, ticket_id: str) -> None:
+        """调试移除等场景清零票据已结清金额。"""
+        self._run("UPDATE tickets SET paid_amount = 0 WHERE ticket_id=?", (ticket_id,))
 
     # —— 预约 ——
     def save_reservation(self, res) -> None:

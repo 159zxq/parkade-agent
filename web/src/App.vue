@@ -75,61 +75,64 @@
         </div>
       </section>
 
-      <!-- ───── 右：识别 + 看板 ───── -->
+      <!-- ───── 第三栏：车牌识别 ───── -->
+      <section class="card recog-pane">
+        <div class="card-title">
+          <span class="t"><el-icon><Camera /></el-icon>车牌识别（双通道）</span>
+        </div>
+        <div class="upload-row">
+          <div class="gate-row">
+            <el-radio-group v-model="uploadAction" size="small">
+              <el-radio-button value="entry">入场</el-radio-button>
+              <el-radio-button value="exit">出场验票</el-radio-button>
+            </el-radio-group>
+            <el-select v-model="uploadArea" :disabled="uploadAction !== 'entry'"
+                       size="small" style="width: 150px; flex: none">
+              <el-option value="auto" label="自动分配区域" />
+              <el-option value="A" label="A 区 · 地面区" />
+              <el-option value="B" label="B 区 · 地下一层" />
+              <el-option value="C" label="C 区 · 地下二层" />
+            </el-select>
+          </div>
+          <el-upload drag :show-file-list="false" accept="image/png,image/jpeg"
+                     :before-upload="onUpload" :disabled="recognizing">
+            <el-icon style="font-size: 34px; color: #93c5fd"><UploadFilled /></el-icon>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 6px">
+              点击或拖拽上传抓拍图片（模拟硬件抓拍图）<br />
+              <span style="font-size: 12px">
+                识别成功即{{ uploadAction === 'exit'
+                  ? '出场验票（未结清费用不予放行）'
+                  : `登记入场（${uploadArea === 'auto' ? '自动分配区域' : uploadArea + ' 区'}）` }}
+                · 支持 PNG / JPEG，≤10MB
+              </span>
+            </div>
+          </el-upload>
+        </div>
+        <div v-if="recog" class="recog-result">
+          <el-tag :type="BADGES[recog.source]?.type || 'info'" size="large" effect="dark" style="align-self: center">
+            {{ BADGES[recog.source]?.text || recog.source }}
+          </el-tag>
+          <div v-if="recog.plate" class="recog-plate">{{ recog.plate }}</div>
+          <div class="recog-detail">
+            <el-tag type="info" effect="plain">本地 OCR：{{ recog.ocr?.plate || '未识别' }}</el-tag>
+            <el-tag type="info" effect="plain">视觉模型：{{ recog.vlm?.plate || '未识别' }}</el-tag>
+            <el-tag type="info" effect="plain">{{ recog.elapsed_ms }} ms</el-tag>
+          </div>
+          <el-alert v-if="gate" :title="gate.message" :type="gate.ok ? 'success' : 'warning'"
+                    :closable="false" show-icon />
+          <el-alert v-if="recog.error" :title="recog.error" type="warning" :closable="false" show-icon />
+          <img v-if="recog.image_url" :src="recog.image_url" class="recog-img" alt="抓拍图片" />
+        </div>
+      </section>
+
+      <!-- ───── 第四栏：缴费 + 车位看板 ───── -->
       <div class="right-pane">
-        <!-- 抓拍/上传识别 -->
-        <section class="card">
-          <div class="card-title">
-            <span class="t"><el-icon><Camera /></el-icon>车牌识别（双通道）</span>
-          </div>
-          <div class="upload-row">
-            <div class="gate-row">
-              <el-radio-group v-model="uploadAction" size="small">
-                <el-radio-button value="entry">入场</el-radio-button>
-                <el-radio-button value="exit">出场结算</el-radio-button>
-              </el-radio-group>
-              <el-select v-model="uploadArea" :disabled="uploadAction !== 'entry'"
-                         size="small" style="width: 150px; flex: none">
-                <el-option value="auto" label="自动分配区域" />
-                <el-option value="A" label="A 区 · 地面区" />
-                <el-option value="B" label="B 区 · 地下一层" />
-                <el-option value="C" label="C 区 · 地下二层" />
-              </el-select>
-            </div>
-            <el-upload drag :show-file-list="false" accept="image/png,image/jpeg"
-                       :before-upload="onUpload" :disabled="recognizing">
-              <el-icon style="font-size: 34px; color: #93c5fd"><UploadFilled /></el-icon>
-              <div style="font-size: 13px; color: var(--muted); margin-top: 6px">
-                点击或拖拽上传抓拍图片（模拟硬件抓拍图）<br />
-                <span style="font-size: 12px">
-                  识别成功即{{ uploadAction === 'exit' ? '结算出场' : `登记入场（${uploadArea === 'auto' ? '自动分配区域' : uploadArea + ' 区'}）` }}
-                  · 支持 PNG / JPEG，≤10MB
-                </span>
-              </div>
-            </el-upload>
-          </div>
-          <div v-if="recog" class="recog-result">
-            <el-tag :type="BADGES[recog.source]?.type || 'info'" size="large" effect="dark" style="align-self: center">
-              {{ BADGES[recog.source]?.text || recog.source }}
-            </el-tag>
-            <div v-if="recog.plate" class="recog-plate">{{ recog.plate }}</div>
-            <div class="recog-detail">
-              <el-tag type="info" effect="plain">本地 OCR：{{ recog.ocr?.plate || '未识别' }}</el-tag>
-              <el-tag type="info" effect="plain">视觉模型：{{ recog.vlm?.plate || '未识别' }}</el-tag>
-              <el-tag type="info" effect="plain">{{ recog.elapsed_ms }} ms</el-tag>
-            </div>
-            <el-alert v-if="gate" :title="gate.message" :type="gate.ok ? 'success' : 'warning'"
-                      :closable="false" show-icon />
-            <el-alert v-if="recog.error" :title="recog.error" type="warning" :closable="false" show-icon />
-            <img v-if="recog.image_url" :src="recog.image_url" class="recog-img" alt="抓拍图片" />
-          </div>
-        </section>
 
         <!-- 缴费 -->
         <section class="card">
           <div class="card-title">
             <span class="t"><el-icon><Wallet /></el-icon>缴费</span>
-            <span style="font-size: 12px; color: var(--muted)">现缴 · 月卡</span>
+            <span style="font-size: 12px; color: var(--muted)">先缴清 · 后出场</span>
           </div>
           <div class="pay-body">
             <div class="pay-row">
@@ -151,7 +154,8 @@
             <div v-if="payHint" class="pay-hint"
                  :class="{ ok: payHint.ok, warn: !payHint.ok }">{{ payHint.text }}</div>
             <div style="font-size: 12px; color: var(--muted)">
-              现缴：当场结清当前停车费（仅在场车）；月卡：按车型月卡价办理，有效期内停车不计费。
+              现缴：结清当前待缴费用（仅在场车）；<b>未结清的车出场时闸机不予放行</b>。
+              月卡：按车型月卡价办理，有效期内停车不计费。
             </div>
           </div>
         </section>
@@ -467,8 +471,15 @@ async function doQueryFee() {
   try {
     const { data } = await api.post('/fee', { plate })
     if (data.ok) {
-      feeText.value = `¥${data.total.toFixed(2)}（${data.duration_min} 分钟）`
-      payHint.value = { ok: true, text: `${plate} 在场，当前应缴 ¥${data.total.toFixed(2)}（${data.duration_min} 分钟）` }
+      const due = data.due ?? data.total
+      const paidAmount = data.paid_amount ?? 0
+      feeText.value = `待缴 ¥${due.toFixed(2)}`
+      payHint.value = { ok: due <= 0.001,
+        text: due > 0.001
+          ? `${plate} 在场，应缴 ¥${data.total.toFixed(2)}（${data.duration_min} 分钟），`
+            + `已结清 ¥${Number(paidAmount).toFixed(2)}，待缴 ¥${due.toFixed(2)}（缴清后出口放行）`
+          : `${plate} 已结清当前停车费（应缴 ¥${data.total.toFixed(2)}），出口可直接放行` }
+      if (due <= 0.001) feeText.value = '已结清'
     } else {
       feeText.value = '查询'
       payHint.value = { ok: false, text: data.error?.message || '查询失败' }
@@ -495,14 +506,15 @@ async function doPay() {
         ElMessage.success(`月卡办理成功 ¥${data.amount.toFixed(2)}（30 天）`)
       } else {
         payHint.value = { ok: true,
-          text: `现缴成功：${plate} ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
-                + ` · 已结清 ${data.duration_min} 分钟停车费` }
-        ElMessage.success(`现缴成功 ¥${data.amount.toFixed(2)}`)
+          text: `现缴成功：${plate} 缴 ¥${data.amount.toFixed(2)}（缴费号 ${data.payment_id}）`
+                + ` · 已结清，出口闸机可放行` }
+        ElMessage.success(`现缴成功 ¥${data.amount.toFixed(2)}，可出场`)
       }
       recog.value = null
       gate.value = null
       loadLots()
     } else {
+      // 已结清等业务提示：提示栏红色展示
       payHint.value = { ok: false, text: data.error?.message || '缴费失败' }
     }
   } catch (e) {

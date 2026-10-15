@@ -158,6 +158,13 @@ def exit_(req: ExitReq):
     monthly = state.monthly_card(plate)   # 有效月卡 → 免计费（契约 v1.5）
     fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time, monthly=monthly is not None)
 
+    # v1.6 闸机规则：出场必须已结清（出费 > 已结清 → 拦截）；月卡免计费视同已结清
+    due = round(fee["total"] - ticket.paid_amount, 2)
+    if due > 0.001 and not req.dry_run:
+        return _err(400, "FEE_UNPAID",
+                    f"车牌 {plate} 有未结清费用 {due:.2f} 元（应缴 {fee['total']:.2f}，"
+                    f"已缴 {ticket.paid_amount:.2f}），请先缴费后再出场")
+
     body = {"ok": True, "plate": plate, "vehicle_type": ticket.vehicle_type,
             "area": ticket.area, "ticket_id": ticket.ticket_id,
             "entry_time": ticket.entry_time.strftime(FMT),
@@ -165,10 +172,11 @@ def exit_(req: ExitReq):
             "duration_min": fee["duration_min"], "free_minutes": fee["free_minutes"],
             "billable_minutes": fee["billable_minutes"], "units": fee["units"],
             "subtotal": fee["subtotal"], "cap_applied": fee["cap_applied"],
-            "total": fee["total"], "paid": True, "monthly": monthly is not None}
+            "total": fee["total"], "paid": True, "monthly": monthly is not None,
+            "paid_amount": ticket.paid_amount, "due": max(0.0, due)}
 
     if not req.dry_run:
-        # 落盘：离开时间 + 时长 + 费用 + 已缴费（离开默认已缴费，契约 v1.3）
+        # 落盘：离开时间 + 时长 + 费用 + 已缴费（结清后放行）
         state.remove_entry(plate, exit_time=exit_time,
                            duration_min=fee["duration_min"], fee=fee["total"])
     return body
@@ -235,16 +243,25 @@ def pay(req: PayReq):
                 "valid_until": pay_.valid_until.strftime(FMT),
                 "monthly_active": True}
 
-    # 现缴：当场结清本次停车费——在场必须（按当前出场费付清）；不在场无需缴费
+    # 现缴：结清当前待缴费用——在场必须；已结清则无需缴费
     if ticket is None:
         return _err(400, "NOT_INSIDE", f"车牌 {plate} 不在场内，无待缴停车费")
 
-    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now())
-    pay_ = state.add_payment(plate, "spot", float(fee["total"]))
+    monthly = state.monthly_card(plate)
+    fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now(),
+                   monthly=monthly is not None)
+    due = round(fee["total"] - ticket.paid_amount, 2)
+    if due <= 0.001:
+        return _err(400, "INVALID_PARAM",
+                    f"车牌 {plate} 已结清当前停车费（{ticket.paid_amount:.2f} 元），无待缴费用")
+
+    pay_ = state.add_payment(plate, "spot", due)
     return {"ok": True, "payment_id": pay_.payment_id, "plate": plate,
             "type": "spot", "amount": pay_.amount,
             "pay_time": pay_.pay_time.strftime(FMT),
-            "duration_min": fee["duration_min"], "total": fee["total"]}
+            "duration_min": fee["duration_min"], "total": fee["total"],
+            "paid_amount": ticket.paid_amount,
+            "due": max(0.0, round(fee["total"] - ticket.paid_amount, 2))}
 
 
 # ---------------------------------------------------------------------------
@@ -304,15 +321,21 @@ def vehicle_status(plate: str):
                 "reservation": reservation, "last_visit": last_visit,
                 "monthly": monthly_info}
     duration = None
+    due = None
+    paid_amount = None
     if ticket is not None:
         duration = int((clock.now() - ticket.entry_time).total_seconds() // 60)
+        fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now(),
+                       monthly=monthly is not None)
+        paid_amount = ticket.paid_amount
+        due = max(0.0, round(fee["total"] - ticket.paid_amount, 2))   # v1.6 待缴金额
     return {"ok": True, "plate": p, "inside": True, "area": area,
             "vehicle_type": ticket.vehicle_type if ticket else DEFAULT_VEHICLE_TYPE,
             "ticket_id": ticket.ticket_id if ticket else None,
             "entry_time": ticket.entry_time.strftime(FMT) if ticket else None,
             "duration_min": duration, "queried_at": clock.now().strftime(FMT),
             "reservation": reservation, "last_visit": last_visit,
-            "monthly": monthly_info}
+            "monthly": monthly_info, "due": due, "paid_amount": paid_amount}
 
 
 # ---------------------------------------------------------------------------

@@ -94,10 +94,16 @@ def main() -> int:
     check("TC-Mock-07c dry_run 不改状态（车还在）",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 25)
 
-    # 7) 真出场 → 12.00，A.free 回补到 26
+    # 7) v1.6 出场拦截：未结清 → 400 FEE_UNPAID；缴费结清后出场
     r = client.post("/exit", json={"plate": "京A12345"})
-    check("TC-Mock-08 真出场 total=12.00", r.json()["total"] == 12.0, str(r.json()))
-    check("TC-Mock-08b 出场后 A.free 回补到 26",
+    check("TC-Mock-08 未结清出场 400 FEE_UNPAID",
+          r.status_code == 400 and r.json()["error"]["code"] == "FEE_UNPAID", str(r.json()))
+    r = client.post("/pay", json={"plate": "京A12345"})
+    check("TC-Mock-08b 现缴结清 12.00（P-0001）",
+          r.json()["amount"] == 12.0, str(r.json()))
+    r = client.post("/exit", json={"plate": "京A12345"})
+    check("TC-Mock-08c 结清后出场 total=12.00", r.json()["total"] == 12.0, str(r.json()))
+    check("TC-Mock-08d 出场后 A.free 回补到 26",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 26)
 
     # 8) 未在场出场
@@ -212,9 +218,14 @@ def main() -> int:
 
     client.post("/debug/time", json={"offset_minutes": 60})
     r = client.post("/exit", json={"plate": "京B88888"})
-    check("TC-Mock-44 出场返回 paid=true（离开默认已缴费）", r.json()["paid"] is True, str(r.json()))
+    check("TC-Mock-44 未结清出场被拦截 400 FEE_UNPAID（v1.6 闸机规则）",
+          r.status_code == 400 and r.json()["error"]["code"] == "FEE_UNPAID", str(r.json()))
+    r = client.post("/pay", json={"plate": "京B88888"})   # 现缴结清
+    check("TC-Mock-44a 现缴结清待缴费用", r.json()["ok"] is True, str(r.json()))
+    r = client.post("/exit", json={"plate": "京B88888"})
+    check("TC-Mock-44b 结清后出场 paid=true", r.json()["paid"] is True, str(r.json()))
     t = client.get("/records?plate=京B88888").json()["tickets"][0]
-    check("TC-Mock-44b 出场落库：离开时间/费用/已缴费/closed",
+    check("TC-Mock-44c 出场落库：离开时间/费用/已缴费/closed",
           t["exit_time"] and t["fee"] == r.json()["total"] and t["paid"] is True
           and t["status"] == "closed", str(t))
 
