@@ -1,4 +1,4 @@
-"""费率×语料一致性自动核对（A5b 测试素材，离线可跑，不调 API）。
+"""费率×语料一致性自动核对（离线可跑，不调 API）。
 
 运行（项目根目录）：python tests/check_consistency.py
 

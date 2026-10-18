@@ -1,9 +1,9 @@
-"""Agent 组装 —— create_agent + SqliteSaver 多轮记忆 + RAG 中间件（A1/A3）。
+"""Agent 组装 —— create_agent + SqliteSaver 多轮记忆 + RAG 中间件。
 
 注意（2026-10-11 实测）：langgraph 1.2+ 的 create_react_agent 已弃用，
 改用 langchain.agents.create_agent；接口模式经 common/config.py 的
 LLM.langchain_kwargs() 注入（responses/chat 双支持）。
-A3（10-12）：挂载 RagContextMiddleware——对话前自动检索规章并注入 system prompt。
+挂载 RagContextMiddleware——对话前自动检索规章并注入 system prompt。
 
 用法：
     from agent.graph import build_agent, chat

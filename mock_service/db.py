@@ -1,4 +1,4 @@
-"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕（契约 v1.3/v1.4）。
+"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕（v1.3/v1.4）。
 
 - 位置：`data/mock.sqlite`（gitignored；与 checkpoints/web.sqlite 同级）；
 - `tickets`：一行一票据 —— 进入时间、离开时间、时长、费用、缴费状态（active/closed），

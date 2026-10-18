@@ -56,30 +56,22 @@ python tests/reset_all.py --yes --keep-images
 
 ## 目录导览
 
-| 目录 | 内容 | 负责人 |
-|---|---|---|
-| `common/` | `rates.yaml` 费率单一事实源 + `pricing.py` 计费引擎（唯一实现）+ `config.py` 三模型配置 | A |
-| `mock_service/` | 停车场模拟服务（FastAPI）：相机抓拍/车位/出入场/预约/虚拟时钟 + 看板调试 | B |
-| `kb/` | 知识库：语料、建库脚本、标注评测集、命中率评测 | C |
-| `agent/` | LangGraph Agent、工具、双通道识别与仲裁、RAG 检索（含中间件） | A |
-| `server/` | Web 服务：用户管理（SQLite）/聊天/上传识别/看板调试代理/静态托管 | A |
-| `web/` | **Vue3 + Element Plus 前端**：用户切换、聊天（引用折叠）、上传/抓拍识别、车位看板调试、进出场记录 | A |
-| `tests/` | 全部测试与自检脚本：冒烟 `smoke_mock`、计费 `test_pricing`、视觉 `test_vision`、E2E `test_e2e` 等 | A/B |
-| `docs/` | 接口契约、三人执行方案、任务板、AI 档案、例会纪要、报告 | 全组 |
-
-## 文档入口（先读这两份再动手）
-
-- **`docs/接口契约.md`** —— 三方对接唯一依据，字段与规则冻结，变更走流程；
-- **`docs/成员A/B/C执行方案.md`** —— 各自的任务卡、验收命令、AI 提问模板、红线；
-- `开发方案.md` —— 总体方案（目标、架构、5 周排期、测试方案、答辩脚本）。
+| 目录 | 内容 |
+|---|---|
+| `common/` | `rates.yaml` 费率单一事实源 + `pricing.py` 计费引擎（唯一实现）+ `config.py` 三模型配置 |
+| `mock_service/` | 停车场模拟服务（FastAPI）：相机抓拍/车位/出入场/预约/缴费/虚拟时钟 + 看板调试 + 落盘记录库 |
+| `kb/` | 知识库：语料、建库脚本、标注评测集、命中率评测 |
+| `agent/` | LangGraph Agent、工具、双通道识别与仲裁、RAG 检索（含中间件） |
+| `server/` | Web 服务：用户管理（SQLite）/聊天/上传识别/看板调试代理/静态托管 |
+| `web/` | **Vue3 + Element Plus 前端**：用户切换、聊天（引用折叠）、车牌识别、缴费、车位看板与记录 |
+| `tests/` | 全部测试与自检脚本：冒烟 `smoke_mock`、计费 `test_pricing`、视觉 `test_vision`、E2E `test_e2e` 等 |
+| `docs/` | 部署文档、接口测试记录、AI 档案、测试报告、测试证据、样例 |
 
 ## 验收指标（90–100 档锚点）
 
-RAG Top3 命中率 ≥95%（60 条标注集）；回答 100% 基于私有知识（域外拒答）；多轮对话不丢上下文；对话链路响应 ≤2 秒（保底 ≤3 秒，实测）；识别链路（视觉 API）延迟如实报告；唯一计费实现，语料费率与 `rates.yaml` 逐项一致。
+RAG Top3 命中率 ≥95%（标注评测集）；回答 100% 基于私有知识（域外拒答）；多轮对话不丢上下文；对话链路响应 ≤2 秒（保底 ≤3 秒，实测）；识别链路（视觉 API）延迟如实报告；唯一计费实现，语料费率与 `rates.yaml` 逐项一致。
 
-## 协作约定（fork → PR，B/C 无需仓库权限）
+## 开发约定
 
-- B/C 在 GitHub 上 **Fork** 本仓库 → 克隆各自的 fork 开工（git 步骤见各自执行方案末尾），完成后在自己 fork 的网页上 **Open pull request** → 目标 `159zxq/parkade-agent` 的 `main`，由 A 审查合并；
-- 分支：各自 fork 里用 `feature/mock`（B）、`feature/kb`（C）；A 直接在本仓库 `feature/agent`；
-- 提交信息：`[模块] 任务号 一句话`，如 `[mock] B3 exit 接通计费`；
-- 每天 commit + push + 记 AI 档案（`docs/ai档案/`），每周例会后更新 `docs/任务板.md`。
+- 提交信息格式：`[模块] 一句话`，如 `[mock] 缴费通道现缴+月卡`；每日记录 AI 辅助开发档案（`docs/ai档案/`）。
+

@@ -1,8 +1,8 @@
 """Mock 服务共享常量与状态。
 
-- 常量表（相机映射、初始占用）来自成员A 的 stub，**不要改**，与契约 §2/§5 保持一致。
-- 成员B 在其上引入可变状态：占用车位副本、票据表、预约表，并支持 /debug/reset 恢复初始。
-- 2026-10-14（契约 v1.3）：进出场/缴费/预约每次变更同步写入落盘记录库（mock_service/db.py）；
+- 常量表（相机映射、初始占用）为固定演示数据，**不要改**。
+- 可变状态：占用车位副本、票据表、预约表，支持 /debug/reset 恢复初始。
+- 2026-10-14（v1.3）：进出场/缴费/预约每次变更同步写入落盘记录库（mock_service/db.py）；
   进程重启时 `restore_from_db()` 恢复在场票据与未过期预约——根治"车已进场、
   重启后查不到（被说成没进场）"的问题。
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from mock_service.clock import clock
 from mock_service.db import db
 
-# 契约 §2：相机 → 车牌映射（固定，保证演示与测试可复现）
+# 相机 → 车牌映射（固定，保证演示与测试可复现）
 CAMERA_TABLE: dict[str, dict] = {
     "cam-1": {"location": "A 区入口", "plate": "京A12345", "vehicle_type": "小型车"},
     "cam-2": {"location": "B 区入口", "plate": "京B88888", "vehicle_type": "小型车"},
@@ -24,14 +24,14 @@ CAMERA_TABLE: dict[str, dict] = {
 
 CAMERA_VARIANTS = ("normal", "blur", "occluded")
 
-# 契约 §5：reset 后的初始驻车状态
+# reset 后的初始驻车状态
 INITIAL_OCCUPIED: dict[str, list[str]] = {
     "A": ["京N10001", "京N10002", "京N10003"],
     "B": [f"京N2{i:04d}" for i in range(1, 9)],   # 京N20001 ~ 京N20008
     "C": ["京N30001", "京N30002"],
 }
 
-# 契约 §1：区域顺序（无 area 时按 A→B→C 找第一个有空位的区）
+# 区域顺序（无 area 时按 A→B→C 找第一个有空位的区）
 AREA_ORDER = ("A", "B", "C")
 
 
@@ -46,7 +46,7 @@ FMT = "%Y-%m-%dT%H:%M:%S"
 
 
 def normalize_plate(plate: str) -> str:
-    """契约 §0：统一去空格、字母转大写。"""
+    """统一去空格、字母转大写。"""
     return "".join(str(plate).split()).upper()
 
 

@@ -1,7 +1,7 @@
-"""Agent 工具层 —— 契约 docs/接口契约.md §3 的五个工具。
+"""Agent 工具层 —— 五个工具的统一接口。
 
 错误处理策略：工具内部不抛异常，一律返回 {"ok": false, "error": ...}，
-让 Agent 把失败原样转述给用户（契约 §0 错误码表）。
+让 Agent 把失败原样转述给用户（统一错误码）。
 """
 from __future__ import annotations
 

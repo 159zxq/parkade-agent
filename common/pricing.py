@@ -1,4 +1,4 @@
-"""计费引擎 —— 全项目唯一计费实现（契约 docs/接口契约.md §4）。
+"""计费引擎 —— 全项目唯一计费实现。
 
 mock_service 的 /exit 与 agent 工具 calculate_exit_fee 都必须调用本模块；
 禁止在任何其他文件重写费率逻辑。费率数字来自 common/rates.yaml（单一事实源）。
@@ -44,7 +44,7 @@ def _next_boundary(moment: datetime, day_start: time, day_end: time) -> datetime
 
 
 def calc_fee(vehicle_type: str, entry_time, exit_time, *, monthly: bool = False) -> dict:
-    """返回契约 §3.5 对应字段（不含 plate/area/ticket_id），另附 segments 分段明细。"""
+    """返回出场结算对应字段（不含 plate/area/ticket_id），另附 segments 分段明细。"""
     rates = load_rates()
     if vehicle_type not in rates["vehicles"]:
         raise ValueError(f"未知车型: {vehicle_type!r}，可选: {list(rates['vehicles'])}")

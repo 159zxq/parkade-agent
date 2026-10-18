@@ -1,8 +1,8 @@
-"""韧性测试（A5b）——持久化复验 + 异常流（mock 停服 / 重复入场）。
+"""韧性测试 ——持久化复验 + 异常流（mock 停服 / 重复入场）。
 
 运行（需 mock 在线）：python tests/test_resilience.py
 
-覆盖测试方案 §8 的「持久化」「异常流」两行：
+覆盖「持久化」「异常流」两行：
 1. Chroma 持久化：两个独立子进程执行同一检索，chunk 序列一致（跨进程重载生效）；
 2. Agent 记忆持久化：子进程 phase1 写入 → 另一子进程 phase2 复述（SqliteSaver 落盘）；
 3. mock 停服韧性：子进程（MOCK_BASE 指向不可达端口）验证 工具 / 识别 / Agent 回合

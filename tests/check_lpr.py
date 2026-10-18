@@ -1,6 +1,6 @@
 """LPR 可行性验证（A0 风险排除）——合成车牌图 → HyperLPR3 识别，打印结果。
 
-这一步决定 B5 的合成图规格（底色/字体/字号）与 A2 的识别链路是否成立。
+用于校准合成图规格（底色/字体/字号）与识别链路。
 运行：python tests/check_lpr.py
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ def synth_plate(plate: str, w: int = 260, h: int = 82) -> Image.Image:
 
 
 def synth_scene(plate: str, camera: str = "cam-1", variant: str = "normal") -> Image.Image:
-    """640×480 监控场景：灰底 + 中央车牌（位置 (190,199)）+ 右下角水印（B5 按此规格画）。"""
+    """640×480 监控场景：灰底 + 中央车牌（位置 (190,199)）+ 右下角水印（按此规格绘制）。"""
     scene = Image.new("RGB", (640, 480), (150, 150, 148))
     plate_img = synth_plate(plate)
     scene.paste(plate_img, ((640 - plate_img.width) // 2, (480 - plate_img.height) // 2))

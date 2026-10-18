@@ -1,11 +1,11 @@
-"""A1 验收：两轮对话 + 跨进程记忆（重启后历史不丢）。
+"""两轮对话 + 跨进程记忆（重启后历史不丢）。
 
 用法（先启动 mock：uvicorn mock_service.main:app --port 8000）：
     python tests/check_agent.py --phase 1    # 进程1：查车位 → 车牌入场
     python tests/check_agent.py --phase 2    # 进程2：问"刚才登记了哪辆车"（验证落盘）
 
 phase 1 与 phase 2 是两个独立进程，共享 data/checkpoints.sqlite，
-phase 2 能答对车牌即证明 SqliteSaver 落盘生效（A1 验收通过）。
+phase 2 能答对车牌即证明 SqliteSaver 落盘生效（验证通过）。
 """
 from __future__ import annotations
 

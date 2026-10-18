@@ -1,4 +1,4 @@
-"""端到端情景测试（A5b）——多轮上下文 / 指代消解 / 域外拒答。
+"""端到端情景测试 ——多轮上下文 / 指代消解 / 域外拒答。
 
 运行（需 mock 在线、知识库已建）：
     python tests/test_e2e.py
@@ -69,7 +69,7 @@ def scenario1(agent, ts: str) -> None:
 
     httpx.post(f"{MOCK_BASE}/debug/time", json={"offset_minutes": 120}, timeout=10)
     r, _ = turn(agent, thread, "情景1", "现在这辆车出场要交多少钱？")
-    check("1.4 计费 12.00 元（契约 §4 样例1）", bool(re.search(r"12\.?0*\s*元", r)))
+    check("1.4 计费 12.00 元（样例1）", bool(re.search(r"12\.?0*\s*元", r)))
 
     r, _ = turn(agent, thread, "情景1", "小型车的收费标准是哪一条规章规定的？")
     check("1.5 费率解释含规章引用（如 3.2-01）", bool(re.search(r"\d\.\d+-\d+", r)))

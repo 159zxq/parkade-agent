@@ -1,9 +1,9 @@
-"""双通道车牌识别与仲裁 —— 契约 docs/接口契约.md §2/§6.3（A2）。
+"""双通道车牌识别与仲裁。
 
 通道一：HyperLPR3 本地 OCR；
 通道二：视觉大模型（common/config.py 的 VISION 独立配置组）。
 
-仲裁矩阵（契约 §6.3，五分支即测试用例表 TC-识别-xx）：
+仲裁矩阵（五分支即测试用例表 TC-识别-xx）：
   OCR成功 + VLM成功且一致 → both_agree      用结果，标记双通道一致
   OCR成功 + VLM成功不一致 → both_conflict   以 OCR 为准，标记存在分歧
   OCR成功 + VLM失败/超时  → ocr_only        OCR 结果
@@ -14,7 +14,7 @@
 - 双通道并行：ThreadPoolExecutor 两线程（本模块在同步工具调度下被调用，
   线程池避免嵌套事件循环问题）；
 - 无缓存：每次调用都真实执行双通道识别（按需求方决定移除识别缓存）；
-- 返回结构（契约工具表）：{plate, source, ocr, vlm, confidence,
+- 返回结构：{plate, source, ocr, vlm, confidence,
   camera_id, variant, image_path, elapsed_ms}。
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ OCR_TIMEOUT = 8.0     # 本地 OCR 单通道超时（含首次模型加载）
 VLM_TIMEOUT = 25.0    # 视觉 API 单通道超时（网关波动留余量）
 VLM_RETRIES = 2       # 网关限流(429)/瞬时错误的重试次数（退避 1.5s/3s）
 
-# 车牌：省份简称 + 字母 + 5~6 位字母数字（契约 §0）
+# 车牌：省份简称 + 字母 + 5~6 位字母数字
 PLATE_RE = re.compile(
     r"[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]"
     r"[A-HJ-NP-Z][A-HJ-NP-Z0-9]{4,6}"
@@ -146,7 +146,7 @@ def vlm_channel(image_bytes: bytes) -> dict | None:
 # 仲裁（纯函数，离线可测）
 # ---------------------------------------------------------------------------
 def arbitrate(ocr: dict | None, vlm: dict | None) -> tuple[str, str | None, float | None]:
-    """契约 §6.3 仲裁矩阵。返回 (source, plate, confidence)。"""
+    """仲裁矩阵。返回 (source, plate, confidence)。"""
     if ocr and vlm:
         if ocr["plate"] == vlm["plate"]:
             return "both_agree", ocr["plate"], ocr.get("confidence")
@@ -251,7 +251,7 @@ def recognize_upload(image_bytes: bytes, filename: str = "upload.jpg") -> dict:
 
 
 def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
-    """抓拍单帧 → 双通道并行识别 → 仲裁。返回契约结构。每次调用真实执行。"""
+    """抓拍单帧 → 双通道并行识别 → 仲裁。返回标准结果结构。每次调用真实执行。"""
     base = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
             "confidence": None, "camera_id": camera_id, "variant": variant,
             "origin": "camera", "image_path": None, "elapsed_ms": None}

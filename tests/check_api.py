@@ -1,4 +1,4 @@
-"""三模型独立链路验证（A0b，需真实 key）——跑通后即可群发"契约冻结 v1"。
+"""三模型独立链路验证（需真实 key）。
 
 运行：python tests/check_api.py [llm|vision|embedding]
   不带参数 = 逐块验证三组；带参数 = 只验证其中一组。
@@ -157,7 +157,7 @@ def main() -> int:
 
     if all(v is True for v in results.values()):
         if len(targets) == 3:
-            print("\n三组全绿 → A0b 完成，可宣布契约 v1 冻结")
+            print("\n三组全绿 → 环境就绪")
         return 0
     if any(v is False for v in results.values()):
         print("\n有块验证未通过：只检查/修改对应块的环境变量，不要动其他两组配置。")

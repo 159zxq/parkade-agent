@@ -1,4 +1,4 @@
-"""RAG 检索路径 —— 冻结签名，见 docs/接口契约.md §6。
+"""RAG 检索路径 —— 冻结签名（kb 建库与评测共用）。
 
 retrieve(query, k) 返回 top-k 规章片段（检索不做生成；生成由主脑在 Agent 内完成）。
 Agent 与评测脚本（kb/eval_rag.py）共用本函数；内部实现由 A 维护，

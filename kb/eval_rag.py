@@ -1,4 +1,4 @@
-"""RAG 命中率评测（docs/接口契约.md §6）：读标注测试集 → 逐条检索 top-k → 统计命中率。
+"""RAG 命中率评测：读标注测试集 → 逐条检索 top-k → 统计命中率。
 
 用法（在仓库根目录）：
     python kb/eval_rag.py                      # 默认 kb/eval_set.csv，k=3

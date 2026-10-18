@@ -1,4 +1,4 @@
-"""双通道识别测试 —— 契约 §6.3 仲裁矩阵 + 实拍三变体（A2 验收）。
+"""双通道识别测试 —— 仲裁矩阵 + 实拍三变体。
 
 运行（需 mock 服务在线：uvicorn mock_service.main:app --port 8000）：
     python tests/test_vision.py          # 全量：仲裁单测 + 实拍

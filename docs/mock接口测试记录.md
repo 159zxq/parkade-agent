@@ -1,8 +1,7 @@
 # Mock 服务接口测试记录（TC-Mock）
 
-> 负责人：成员B｜模块：`mock_service/`｜执行脚本：`tests/smoke_mock.py`、`tests/test_pricing.py`
-> 对接依据：《接口契约》v1 §3（字段与规则冻结）
-> 覆盖：B1–B6 全部接口 + 计费一致性 + 时钟纪律
+> 模块：`mock_service/`｜执行脚本：`tests/smoke_mock.py`、`tests/test_pricing.py`
+> 覆盖：全部接口 + 计费一致性 + 时钟纪律
 >
 > 执行方式（项目根目录）：
 >
@@ -145,13 +144,13 @@
 
 ---
 
-## 2. 计费一致性用例（TC-Price-xx，`common/pricing.py` 由成员A 维护）
+## 2. 计费一致性用例（TC-Price-xx，`common/pricing.py` 唯一实现）
 
 执行 `python tests/test_pricing.py` → **ALL PASS（共 9 项）**。
 
 | 用例号 | 场景 | 期望 | 实际 | 通过 |
 |---|---|---|---|---|
-| TC-Price-01 | 小型车 10:00→12:00（契约 §4 样例1） | 12.00 元 / 4 单位 | 12.0 / 4 | ✓ |
+| TC-Price-01 | 小型车 10:00→12:00（样例1） | 12.00 元 / 4 单位 | 12.0 / 4 | ✓ |
 | TC-Price-02 | 小型车 21:30→23:10（跨夜间，样例2） | 7.50 元 / 4 单位 | 7.5 / 4 | ✓ |
 | TC-Price-03 | 小型车 11-10 21:00→11-11 01:00（跨天，样例3） | 15.00 元 / 8 单位 | 15.0 / 8 | ✓ |
 | TC-Price-04 | 小型车 07:00→23:00（触当日封顶） | 30.00 元，cap_applied | 30.0 / True | ✓ |
@@ -163,20 +162,20 @@
 
 ---
 
-## 3. 时钟纪律自查（契约 §0 铁律）
+## 3. 时钟纪律自查
 
 ```bash
 grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
 ```
 
 结果：**输出为空** —— 源码中 `datetime.now()` 仅出现在 `mock_service/clock.py`（时钟实现本体），
-其余业务代码一律使用 `clock.now()`，符合契约 §0 虚拟时钟纪律。
+其余业务代码一律使用 `clock.now()`，符合虚拟时钟纪律。
 
 > 注：若不加 `--include="*.py"`，可能匹配到 `__pycache__/*.pyc` 编译缓存，那不是源码。
 
 ---
 
-## 4. 相机图规格符合性（契约 §2 冻结规格）
+## 4. 相机图规格符合性（冻结规格）
 
 | 检查项 | 要求 | 实际 | 通过 |
 |---|---|---|---|
@@ -193,13 +192,10 @@ grep -rn "datetime.now()" mock_service/ --include="*.py" | grep -v clock.py
 
 ## 5. 已知事项
 
-1. **计费口径已与 A 对齐**：免费 15 分钟**从入场时刻扣除**（契约 §4 已由 A 修正为 v0.1，例2 = 7.50）；
-   统一走 A 的 `common/pricing.py`。
-2. `mock_service/` 现为完整实现（A 的 stub 中所有 `TODO(Bx)` 已替换为真逻辑）；
-   A 的常量表 `CAMERA_TABLE` / `INITIAL_OCCUPIED` 未改动，与契约 §2/§5 一致。
-3. A0 阶段的 stub 冒烟脚本已随代码精简移除（其断言已全部并入 `tests/smoke_mock.py`）；
-   历史证据见 AI 档案 2026-10-11/10-12。
-4. 本记录即 B7b 定稿版本，覆盖 B1–B6 全部接口 + 计费 + 时钟纪律 + 相机图规格。
+1. **计费口径**：免费 15 分钟**从入场时刻扣除**（例2 = 7.50）；统一走 `common/pricing.py`。
+2. `mock_service/` 为完整实现；常量表 `CAMERA_TABLE` / `INITIAL_OCCUPIED` 为固定演示数据。
+3. 早期 stub 冒烟脚本已随代码精简移除（断言已并入 `tests/smoke_mock.py`）。
+4. 本记录覆盖全部接口 + 计费 + 时钟纪律 + 相机图规格。
 5. **v1.3 记录库（10-14）**：票据/预约落盘 `data/mock.sqlite`（进入时间/离开时间/缴费状态/预约情况），
    进程重启自动恢复在场与未过期预约；`/debug/reset` 清库回初始。冒烟脚本经 `MOCK_DB` 环境变量
    写独立库（`data/mock_smoke.sqlite`），与运行中服务互不干扰。

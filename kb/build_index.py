@@ -4,7 +4,7 @@
     python kb/build_index.py --rebuild     # 先清后建（语料改动期建议总是加 --rebuild）
     python kb/build_index.py               # 增量 upsert（不改结构时更快）
 
-切块规则（docs/接口契约.md §6）：按 `## 小节` 语义切分，小节内 200–400 字一块、
+切块规则：按 `## 小节` 语义切分，小节内 200–400 字一块、
 相邻块重叠 1 句；chunk id = 小节编号 + 两位序号（如 3.2-01）；
 以 _ 开头的文件（模板）不收录。
 嵌入：common/config.py 的 EMBEDDING 配置组（独立配置），单批 ≤ EMBEDDING_BATCH（默认 10）。

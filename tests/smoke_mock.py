@@ -42,7 +42,7 @@ def main() -> int:
     r = client.post("/debug/reset")
     check("TC-Mock-00 POST /debug/reset 200", r.status_code == 200 and r.json().get("ok") is True)
 
-    # 1) B1 车位状态初始值（契约 §5）
+    # 1) 车位状态初始值
     r = client.get("/lots/status")
     body = r.json()
     areas = {a["area"]: a for a in body.get("areas", [])}
@@ -57,7 +57,7 @@ def main() -> int:
     check("TC-Mock-01f 未知区域 400 INVALID_PARAM",
           r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM")
 
-    # 2) B2 入场
+    # 2) 入场
     r = client.post("/entry", json={"plate": "京Z99999"})
     body = r.json()
     check("TC-Mock-02 /entry 正常入场 ok",
@@ -84,7 +84,7 @@ def main() -> int:
     check("TC-Mock-06 时间偏移 +120 生效",
           r.json()["virtual_time"] == "2026-11-10T12:00:00", str(r.json()))
 
-    # 6) B3 dry_run 报价（契约 §4 样例1 = 12.00），且状态不变
+    # 6) dry_run 报价（样例1 = 12.00），且状态不变
     r = client.post("/exit", json={"plate": "京A12345", "dry_run": True})
     body = r.json()
     check("TC-Mock-07 dry_run 报价 total=12.00", body["total"] == 12.0, str(body))
@@ -111,7 +111,7 @@ def main() -> int:
     check("TC-Mock-09 未在场 400 NOT_INSIDE",
           r.status_code == 400 and r.json()["error"]["code"] == "NOT_INSIDE", str(r.json()))
 
-    # 9) B6 预约 + keep_until
+    # 9) 预约 + keep_until
     r = client.post("/reserve",
                     json={"plate": "京B88888", "reserve_time": "2026-11-10T18:00:00", "area": "B"})
     body = r.json()
@@ -122,7 +122,7 @@ def main() -> int:
     check("TC-Mock-11 重复预约 400 RESERVE_CONFLICT",
           r.status_code == 400 and r.json()["error"]["code"] == "RESERVE_CONFLICT", str(r.json()))
 
-    # 10) 契约 §4 例2（跨入夜间）：21:30→23:10 应收 7.50
+    # 10) 例2（跨入夜间）：21:30→23:10 应收 7.50
     client.post("/debug/reset")
     client.post("/debug/time", json={"set": "2026-11-10T21:30:00"})
     client.post("/entry", json={"plate": "京A12345"})
@@ -130,7 +130,7 @@ def main() -> int:
     r = client.post("/exit", json={"plate": "京A12345", "dry_run": True})
     check("TC-Mock-20 例2 跨夜间 total=7.50", r.json()["total"] == 7.5, str(r.json()))
 
-    # 11) B5 相机图三变体 + truth
+    # 11) 相机图三变体 + truth
     for v in ("normal", "blur", "occluded"):
         r = client.get("/camera/cam-1/capture", params={"variant": v})
         check(f"TC-Mock-13 capture {v} 返回 JPEG",
@@ -147,7 +147,7 @@ def main() -> int:
     check("TC-Mock-14b 非法 variant 400 INVALID_PARAM",
           r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM", str(r.json()))
 
-    # 12) B4 时钟
+    # 12) 时钟
     r = client.post("/debug/time/reset")
     check("TC-Mock-15 时钟 reset offset=0", r.json()["offset_minutes"] == 0, str(r.json()))
     client.post("/debug/time", json={"offset_minutes": 90})
@@ -159,7 +159,7 @@ def main() -> int:
     check("TC-Mock-17 reset 后恢复初始 A.free=27",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 27)
 
-    # 14) 单车查询 /vehicle（契约 v1.2）
+    # 14) 单车查询 /vehicle（v1.2）
     r = client.get("/vehicle/京A12345")
     body = r.json()
     check("TC-Mock-30 /vehicle 不在场 inside=false",
@@ -177,7 +177,7 @@ def main() -> int:
           r.status_code == 200 and r.json()["inside"] is False, str(r.json()))
     client.post("/debug/reset")
 
-    # 15) 看板调试 /debug/lots（契约 v1.1）
+    # 15) 看板调试 /debug/lots（v1.1）
     r = client.post("/debug/lots", json={"area": "A", "total": 50})
     check("TC-Mock-33 /debug/lots 改总车位", r.json()["total"] == 50, str(r.json()))
     r = client.post("/debug/lots", json={"area": "A", "occupied": 45})
@@ -189,7 +189,7 @@ def main() -> int:
     check("TC-Mock-36 reset 恢复容量与占用",
           client.get("/lots/status?area=A").json()["areas"][0]["total"] == 30)
 
-    # 16) 记录库 + 预约占位（契约 v1.3）
+    # 16) 记录库 + 预约占位（v1.3）
     client.post("/debug/reset")
     a0 = client.get("/lots/status?area=A").json()["areas"][0]
     check("TC-Mock-40 看板含 reserved 字段（初始 0）",
@@ -256,7 +256,7 @@ def main() -> int:
           client.get("/records").json()["tickets"] == []
           and client.get("/records").json()["reservations"] == [])
 
-    # 19) 缴费（契约 v1.5）：现缴 spot / 月卡 monthly
+    # 19) 缴费（v1.5）：现缴 spot / 月卡 monthly
     client.post("/debug/reset")
     r = client.post("/pay", json={"plate": "京A12345"})
     check("TC-Mock-50 不在场现缴 400 NOT_INSIDE（无待缴费用）",
