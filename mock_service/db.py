@@ -1,13 +1,13 @@
-"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕（v1.3/v1.4）。
+"""Mock 服务落盘记录库（SQLite）—— 进出场 / 缴费 / 预约全留痕。
 
 - 位置：`data/mock.sqlite`（gitignored；与 checkpoints/web.sqlite 同级）；
 - `tickets`：一行一票据 —— 进入时间、离开时间、时长、费用、缴费状态（active/closed），
   出场即落「离开时间 + 费用 + paid=1」（离开默认已缴费）；
 - `reservations`：一行一预约 —— 预约时间、保留截止、状态（active/consumed/expired）；
-- `payments`（v1.5）：一行一次缴费 —— `type=spot` 现缴（当场付清，无余额）/
+- `payments`：一行一次缴费 —— `type=spot` 现缴（当场付清，无余额）/
   `type=monthly` 月卡（valid_until 有效期内出场免计费）；缴费通道（POST /pay）写入；
 - 进程重启：`State.restore_from_db()` 从本库恢复「在场票据 + 未过期预约 + 有效月卡 + 编号序列」，
-  根治"车已进场、重启后却查不到（被说成没进场）"；
+  车已进场不会因重启查不到；
 - `/debug/reset`：`db.reset()` 清库，恢复演示初始。
 
 并发：每次操作独立连接、用完即关（与 server/app.py 的 _db 模式一致），
@@ -67,7 +67,7 @@ class MockDB:
                     "exit_time TEXT, duration_min INTEGER, fee REAL,"
                     "paid INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',"
                     "paid_amount REAL NOT NULL DEFAULT 0)")
-                # 旧库迁移：tickets 无 paid_amount 列时补列（v1.6：出场前须结清）
+                # 旧库迁移：tickets 无 paid_amount 列时补列（出场前须结清）
                 tcols = [r[1] for r in conn.execute("PRAGMA table_info(tickets)").fetchall()]
                 if "paid_amount" not in tcols:
                     conn.execute("ALTER TABLE tickets ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0")
@@ -81,7 +81,7 @@ class MockDB:
                     "payment_id TEXT PRIMARY KEY, plate TEXT NOT NULL,"
                     "type TEXT NOT NULL DEFAULT 'spot',"
                     "amount REAL NOT NULL, pay_time TEXT NOT NULL, valid_until TEXT)")
-                # 旧 v1.4 预缴表（含 status，无 type）语义已废弃：重建为空表
+                # 旧版预缴表（含 status，无 type）语义已废弃：重建为空表
                 cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
                 if "type" not in cols:
                     conn.execute("DROP TABLE payments")
@@ -111,7 +111,7 @@ class MockDB:
              ticket.entry_time.strftime(_FMT)))
 
     def add_ticket_payment(self, ticket_id: str, amount: float) -> None:
-        """累计票据已结清金额（现缴入账；v1.6 出场拦截用）。"""
+        """累计票据已结清金额（现缴入账；出场拦截校验用）。"""
         self._run("UPDATE tickets SET paid_amount = paid_amount + ? WHERE ticket_id=?",
                   (float(amount), ticket_id))
 
@@ -189,7 +189,7 @@ class MockDB:
         rows = self._query("SELECT MAX(CAST(SUBSTR(reserve_id, 3) AS INTEGER)) m FROM reservations")
         return int(rows[0]["m"] or 0)
 
-    # —— 缴费（v1.5：现缴 spot / 月卡 monthly）——
+    # —— 缴费：现缴 spot / 月卡 monthly ——
     def save_payment(self, payment_id: str, plate: str, ptype: str,
                      amount: float, pay_time: dt.datetime,
                      valid_until: dt.datetime | None = None) -> None:

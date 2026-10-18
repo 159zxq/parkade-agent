@@ -1,8 +1,8 @@
-"""RAG 检索路径 —— 冻结签名（kb 建库与评测共用）。
+"""RAG 检索路径 —— 统一检索入口（Agent 对话与评测脚本共用）。
 
 retrieve(query, k) 返回 top-k 规章片段（检索不做生成；生成由主脑在 Agent 内完成）。
-Agent 与评测脚本（kb/eval_rag.py）共用本函数；内部实现由 A 维护，
-其它模块只许调用、不许改签名。
+对话（agent/rag_middleware.py）与评测（kb/eval_rag.py）走同一条检索路径，
+保证"评测口径 = 线上口径"；其它模块只调用、不修改本函数签名。
 """
 from __future__ import annotations
 

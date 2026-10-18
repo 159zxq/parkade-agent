@@ -38,7 +38,7 @@ def main() -> int:
     try:
         calc_fee("三轮车", D("2026-11-10T10:00:00"), D("2026-11-10T11:00:00"))
     except ValueError:
-        print("[PASS] 未知车型给出 ValueError（B 映射为 INVALID_PARAM）")
+        print("[PASS] 未知车型给出 ValueError（mock 层映射为 INVALID_PARAM）")
     else:
         print("[FAIL] 未知车型未报错")
         failed += 1

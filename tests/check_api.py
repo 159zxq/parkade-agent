@@ -21,17 +21,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common.config import EMBEDDING, EMBEDDING_BATCH, LLM, VISION, ModelConfig  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
-
 
 def _sample_image() -> bytes:
-    """视觉验证用样图：现场合成一张 cam-1 抓拍（cam-1 固定车牌 京A12345）。
+    """视觉验证用样图：现场合成一张 cam-1 抓拍 JPEG（cam-1 固定车牌 京A12345）。
 
-    不依赖任何磁盘素材，离线可生成；PNG 由 JPEG 转换（VLM 两接口均支持）。
+    不依赖任何磁盘素材，离线可生成；与运行时识别链路用图完全一致。
     """
     from mock_service.camera import render_capture
 
     return render_capture("cam-1", "normal")
+
 
 # auto 回退时的提示收集，最后统一打印
 _HINTS: list[str] = []

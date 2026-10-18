@@ -1,6 +1,6 @@
-"""LPR 可行性验证（A0 风险排除）——合成车牌图 → HyperLPR3 识别，打印结果。
+"""LPR 可行性验证 —— 合成车牌图 → HyperLPR3 识别，打印结果。
 
-用于校准合成图规格（底色/字体/字号）与识别链路。
+用于校准合成图规格（底色/字体/字号，即 mock 相机图规格）与识别链路可达性。
 运行：python tests/check_lpr.py
 """
 from __future__ import annotations

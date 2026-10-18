@@ -59,7 +59,7 @@ def unit_tests() -> None:
 
 def live_tests() -> None:
     """实拍三变体（TC-识别-10..15）。"""
-    # normal：OCR 必成功（B 的图已实测 3/3）
+    # normal：OCR 必成功（合成图规格已实测 3/3）
     r = recognize_plate("cam-1", "normal")
     check("TC-识别-10 cam-1 normal：plate=京A12345 且 OCR 通道有值",
           r["plate"] == "京A12345" and r["ocr"] is not None,

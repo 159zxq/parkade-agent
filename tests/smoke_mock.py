@@ -94,7 +94,7 @@ def main() -> int:
     check("TC-Mock-07c dry_run 不改状态（车还在）",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 25)
 
-    # 7) v1.6 出场拦截：未结清 → 400 FEE_UNPAID；缴费结清后出场
+    # 7) 出场拦截：未结清 → 400 FEE_UNPAID；缴费结清后出场
     r = client.post("/exit", json={"plate": "京A12345"})
     check("TC-Mock-08 未结清出场 400 FEE_UNPAID",
           r.status_code == 400 and r.json()["error"]["code"] == "FEE_UNPAID", str(r.json()))
@@ -159,7 +159,7 @@ def main() -> int:
     check("TC-Mock-17 reset 后恢复初始 A.free=27",
           client.get("/lots/status?area=A").json()["areas"][0]["free"] == 27)
 
-    # 14) 单车查询 /vehicle（v1.2）
+    # 14) 单车查询 /vehicle
     r = client.get("/vehicle/京A12345")
     body = r.json()
     check("TC-Mock-30 /vehicle 不在场 inside=false",
@@ -177,7 +177,7 @@ def main() -> int:
           r.status_code == 200 and r.json()["inside"] is False, str(r.json()))
     client.post("/debug/reset")
 
-    # 15) 看板调试 /debug/lots（v1.1）
+    # 15) 看板调试 /debug/lots
     r = client.post("/debug/lots", json={"area": "A", "total": 50})
     check("TC-Mock-33 /debug/lots 改总车位", r.json()["total"] == 50, str(r.json()))
     r = client.post("/debug/lots", json={"area": "A", "occupied": 45})
@@ -189,7 +189,7 @@ def main() -> int:
     check("TC-Mock-36 reset 恢复容量与占用",
           client.get("/lots/status?area=A").json()["areas"][0]["total"] == 30)
 
-    # 16) 记录库 + 预约占位（v1.3）
+    # 16) 记录库 + 预约占位
     client.post("/debug/reset")
     a0 = client.get("/lots/status?area=A").json()["areas"][0]
     check("TC-Mock-40 看板含 reserved 字段（初始 0）",
@@ -218,7 +218,7 @@ def main() -> int:
 
     client.post("/debug/time", json={"offset_minutes": 60})
     r = client.post("/exit", json={"plate": "京B88888"})
-    check("TC-Mock-44 未结清出场被拦截 400 FEE_UNPAID（v1.6 闸机规则）",
+    check("TC-Mock-44 未结清出场被拦截 400 FEE_UNPAID（先缴清后出场）",
           r.status_code == 400 and r.json()["error"]["code"] == "FEE_UNPAID", str(r.json()))
     r = client.post("/pay", json={"plate": "京B88888"})   # 现缴结清
     check("TC-Mock-44a 现缴结清待缴费用", r.json()["ok"] is True, str(r.json()))
@@ -256,7 +256,7 @@ def main() -> int:
           client.get("/records").json()["tickets"] == []
           and client.get("/records").json()["reservations"] == [])
 
-    # 19) 缴费（v1.5）：现缴 spot / 月卡 monthly
+    # 19) 缴费：现缴 spot / 月卡 monthly
     client.post("/debug/reset")
     r = client.post("/pay", json={"plate": "京A12345"})
     check("TC-Mock-50 不在场现缴 400 NOT_INSIDE（无待缴费用）",

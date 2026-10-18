@@ -1,20 +1,20 @@
-"""RAG 上下文中间件 —— 对话前自动检索知识库并注入（检索为内建路径）。
+"""RAG 上下文中间件 —— 对话前自动检索知识库并注入（检索为内建路径，非工具）。
 
 职责：每次模型调用前，取最后一条用户消息作为 query → `retrieve(query, k=3)`
 → 拼成"规章片段"块追加到 system prompt（附 chunk id 供引用），并把命中
 写入**线程局部存储**（`last_hits`），供前端/测试脚本取证。
 
-取证实现说明（2026-10-12 实测）：langchain 1.x 的 wrap_model_call 里
-`handler()` 返回的 ModelResponse 不是 dict，且写入的 metadata 不会回传到
-图状态的最终消息（对象被重新构造）。故用 threading.local：
-- Streamlit 每个会话一个线程 → 天然隔离（agent 实例经 cache_resource 共享）；
-- CLI 单线程 → 直接可读。
+取证为什么用 threading.local：langchain 1.x 的 wrap_model_call 中
+`handler()` 返回的 ModelResponse 不是 dict，且写入消息 metadata 的值不会
+回传到图状态的最终消息（对象被重新构造），无法从返回值里取出命中片段。
+server 层用全局锁串行化 Agent 调用，"写 → invoke → 读"在同一线程内完成，
+threading.local 天然按线程隔离，并发请求互不串扰。
 
-设计决定（A，2026-10-12）：
-- 检索挂在 `wrap_model_call` 而非做成工具——省掉"模型先调工具再答"的一整次往返，
-  对话链路更快；引用出自检索结果本身，不依赖模型复述。
-- 检索无结果或向量库未建时**静默跳过**（把错误记进 last_error），不阻塞对话——
-  否则 C 的库没建好会把整个 Agent 拖死。
+设计决策：
+- 检索挂在 `wrap_model_call` 而非做成工具——省掉"模型先调工具再答"的一整次
+  往返，对话链路更快；引用出自检索结果本身，不依赖模型复述。
+- 检索无结果或向量库未建时**静默跳过**（错误记进 last_error），不阻塞对话——
+  知识库缺失时，Agent 的查询/计费/识别等非规章咨询功能不受影响。
 """
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ class RagContextMiddleware(AgentMiddleware):
         super().__init__()
         self._local = threading.local()
 
-    # —— 取证读取（同线程内有效；Streamlit 每会话一线程）——
+    # —— 取证读取（同线程内有效：锁下"写 → invoke → 读"在同一线程完成）——
     @property
     def last_hits(self) -> list[dict]:
         return getattr(self._local, "hits", [])

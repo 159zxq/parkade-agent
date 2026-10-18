@@ -1,10 +1,10 @@
 """Mock 服务共享常量与状态。
 
 - 常量表（相机映射、初始占用）为固定演示数据，**不要改**。
-- 可变状态：占用车位副本、票据表、预约表，支持 /debug/reset 恢复初始。
-- 2026-10-14（v1.3）：进出场/缴费/预约每次变更同步写入落盘记录库（mock_service/db.py）；
-  进程重启时 `restore_from_db()` 恢复在场票据与未过期预约——根治"车已进场、
-  重启后查不到（被说成没进场）"的问题。
+- 可变状态：占用车位副本、票据表、预约表、缴费表，支持 /debug/reset 恢复初始。
+- 持久化：进出场/缴费/预约每次变更同步写入落盘记录库（mock_service/db.py）；
+  进程重启时 `restore_from_db()` 恢复在场票据与未过期预约——车已进场不会
+  因重启查不到（被说成没进场）。
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ class Ticket:
     area: str
     vehicle_type: str
     entry_time: dt.datetime
-    paid_amount: float = 0.0   # 已结清金额（v1.6：出场前须结清当前停车费）
+    paid_amount: float = 0.0   # 已结清金额（出场前须结清当前停车费）
 
 
 @dataclass
@@ -76,7 +76,7 @@ class Reservation:
 
 @dataclass
 class Payment:
-    """缴费记录（v1.5）：type=spot 现缴（当场付清）/ monthly 月卡（有效期内出场免计费）。"""
+    """缴费记录：type=spot 现缴（当场付清）/ monthly 月卡（有效期内出场免计费）。"""
 
     payment_id: str
     plate: str
@@ -231,8 +231,8 @@ class State:
         db.mark_exited(ticket.ticket_id, exit_time, duration_min, fee, paid=True)
         return ticket
 
-    # —— 缴费（v1.5：现缴 spot 当场付清 / 月卡 monthly 有效期内免计费）——
-    # v1.6：现缴金额入账到当前票据（paid_amount），出场闸机据此校验结清
+    # —— 缴费：现缴 spot 当场付清 / 月卡 monthly 有效期内免计费；现缴金额入账
+    #    到当前票据（paid_amount），出场闸机据此校验是否结清 ——
     def next_payment_id(self) -> str:
         self._payment_seq += 1
         return f"P-{self._payment_seq:04d}"
@@ -245,7 +245,7 @@ class State:
                         pay.pay_time, pay.valid_until)
         if ptype == "spot":
             ticket = self.tickets.get(plate)
-            if ticket is not None:   # 现缴入账当前票据（未结清金额随之减少）
+            if ticket is not None:   # 现缴入账当前票据（待缴金额随之减少）
                 ticket.paid_amount = round(ticket.paid_amount + pay.amount, 2)
                 db.add_ticket_payment(ticket.ticket_id, pay.amount)
         return pay

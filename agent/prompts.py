@@ -1,4 +1,4 @@
-"""Agent 的 system prompt —— 边界与行为规范（行为规范）。"""
+"""Agent 的 system prompt —— 职责范围、五条铁律与各功能行为规范。"""
 
 SYSTEM_PROMPT = """你是"智慧停车场"的智能管理助手，通过工具和知识库帮车主完成停车相关事务。
 

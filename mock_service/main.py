@@ -1,11 +1,12 @@
-"""Mock 停车场服务 —— 全接口实现。
+"""Mock 停车场服务 —— 全部接口实现（FastAPI）。
 
-完整实现：车位增减、票据表、冲突校验、相机图渲染等；接口字段名/结构保持稳定。
+覆盖：车位状态、出入场（含先缴清后出场的闸机规则）、预约、缴费（现缴/月卡）、
+相机抓拍（合成图）、单车查询、记录留痕、虚拟时钟与看板调试。
 
-2026-10-14（v1.3，需求方迭代）：
-- 票据/预约落盘 SQLite（mock_service/db.py → data/mock.sqlite）：
-  进入时间、离开时间（出场落）、缴费状态（离开默认已缴费）、预约情况全留痕；
-- 进程重启自动恢复在场票据与未过期预约（根治"车已进场、重启后被说成没进场"）；
+持久化设计：
+- 进出场/缴费/预约全量落盘 SQLite（mock_service/db.py → data/mock.sqlite）：
+  进入时间、离开时间、缴费状态、预约情况全留痕；
+- 进程重启自动恢复在场票据与未过期预约（车已进场不会因重启被说成没进场）；
 - 看板余位 = 总 − 占用 − **预约保留**（被预约占用的车位在看板上同步变化）；
 - 预约车入场优先进入预约区域并自动核销预约。
 
@@ -37,7 +38,7 @@ RESERVE_KEEP_MINUTES = int(reserve_cfg.get("keep_minutes", 30))
 
 app = FastAPI(title="停车场 Mock 服务", version="1.0")
 
-# 启动即建库并恢复上次运行的在场/预约状态（重启不丢，v1.3）
+# 启动即建库并恢复上次运行的在场/预约/月卡状态（重启不丢）
 db.init()
 state.restore_from_db()
 
@@ -153,10 +154,10 @@ def exit_(req: ExitReq):
         return _err(400, "NOT_INSIDE", f"车牌 {plate} 不在场内")
 
     exit_time = clock.now()
-    monthly = state.monthly_card(plate)   # 有效月卡 → 免计费（v1.5）
+    monthly = state.monthly_card(plate)   # 有效月卡 → 免计费
     fee = calc_fee(ticket.vehicle_type, ticket.entry_time, exit_time, monthly=monthly is not None)
 
-    # v1.6 闸机规则：出场必须已结清（出费 > 已结清 → 拦截）；月卡免计费视同已结清
+    # 闸机规则：出场必须已结清（应缴 > 已结清 → 拦截）；月卡免计费视同已结清
     due = round(fee["total"] - ticket.paid_amount, 2)
     if due > 0.001 and not req.dry_run:
         return _err(400, "FEE_UNPAID",
@@ -212,7 +213,7 @@ def reserve(req: ReserveReq):
 
 
 # ---------------------------------------------------------------------------
-# 缴费（v1.5）：现缴 spot（当场付清本次停车费）/ 月卡 monthly（有效期内免计费）
+# 缴费：现缴 spot（当场付清本次停车费）/ 月卡 monthly（有效期内免计费）
 # ---------------------------------------------------------------------------
 @app.post("/pay")
 def pay(req: PayReq):
@@ -284,7 +285,7 @@ def truth(camera_id: str, variant: str = "normal"):
 
 
 # ---------------------------------------------------------------------------
-# 单车查询（v1.2；v1.3 增预约情况与上次停车）
+# 单车查询（含预约情况、月卡与上次停车）
 # ---------------------------------------------------------------------------
 def _reservation_view(res) -> dict:
     return {"reserve_id": res.reserve_id, "area": res.area,
@@ -325,7 +326,7 @@ def vehicle_status(plate: str):
         fee = calc_fee(ticket.vehicle_type, ticket.entry_time, clock.now(),
                        monthly=monthly is not None)
         paid_amount = ticket.paid_amount
-        due = max(0.0, round(fee["total"] - ticket.paid_amount, 2))   # v1.6 待缴金额
+        due = max(0.0, round(fee["total"] - ticket.paid_amount, 2))   # 待缴金额
     return {"ok": True, "plate": p, "inside": True, "area": area,
             "vehicle_type": ticket.vehicle_type if ticket else DEFAULT_VEHICLE_TYPE,
             "ticket_id": ticket.ticket_id if ticket else None,
@@ -336,7 +337,7 @@ def vehicle_status(plate: str):
 
 
 # ---------------------------------------------------------------------------
-# 记录查询（v1.3）：进出场 / 缴费 / 预约 全留痕
+# 记录查询：进出场 / 缴费 / 预约 全留痕
 # ---------------------------------------------------------------------------
 @app.get("/records")
 def records(plate: str | None = None, limit: int = 20):
@@ -384,12 +385,12 @@ def reset_time():
 def reset_all():
     clock.reset()
     state.reset()
-    db.reset()   # 记录库一并清空，回到演示初始（v1.3）
+    db.reset()   # 记录库一并清空，回到演示初始
     return {"ok": True, "updated_at": clock.now().strftime(FMT)}
 
 
 # ---------------------------------------------------------------------------
-# 看板调试（前端"车位看板调试"用，v1.1 新增）
+# 看板调试（前端"车位看板调试"用）
 # ---------------------------------------------------------------------------
 class LotsDebugReq(BaseModel):
     area: str

@@ -3,7 +3,7 @@
 通道一：HyperLPR3 本地 OCR；
 通道二：视觉大模型（common/config.py 的 VISION 独立配置组）。
 
-仲裁矩阵（五分支即测试用例表 TC-识别-xx）：
+仲裁矩阵（五分支，对应 tests/test_vision.py 的 TC-识别-01..05）：
   OCR成功 + VLM成功且一致 → both_agree      用结果，标记双通道一致
   OCR成功 + VLM成功不一致 → both_conflict   以 OCR 为准，标记存在分歧
   OCR成功 + VLM失败/超时  → ocr_only        OCR 结果
@@ -13,9 +13,9 @@
 实现要点：
 - 双通道并行：ThreadPoolExecutor 两线程（本模块在同步工具调度下被调用，
   线程池避免嵌套事件循环问题）；
-- 无缓存：每次调用都真实执行双通道识别（按需求方决定移除识别缓存）；
-- 返回结构：{plate, source, ocr, vlm, confidence,
-  camera_id, variant, image_path, elapsed_ms}。
+- 无缓存：每次调用都真实执行双通道识别（每次演示/测试均为真实链路）；
+- 返回结构：{plate, source, ocr, vlm, confidence, camera_id, variant,
+  origin, image_path, elapsed_ms}（识别失败时另附 error 说明）。
 """
 from __future__ import annotations
 

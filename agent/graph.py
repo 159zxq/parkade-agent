@@ -1,7 +1,7 @@
 """Agent 组装 —— create_agent + SqliteSaver 多轮记忆 + RAG 中间件。
 
-注意（2026-10-11 实测）：langgraph 1.2+ 的 create_react_agent 已弃用，
-改用 langchain.agents.create_agent；接口模式经 common/config.py 的
+注意：langgraph 1.2+ 的 create_react_agent 已弃用，用
+langchain.agents.create_agent；接口模式经 common/config.py 的
 LLM.langchain_kwargs() 注入（responses/chat 双支持）。
 挂载 RagContextMiddleware——对话前自动检索规章并注入 system prompt。
 
@@ -26,8 +26,9 @@ from common.config import LLM
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "checkpoints.sqlite"
 
-# 最近一次 build_agent 创建的 RAG 中间件（chat_with_trace 取证用；
-# Streamlit 每会话一线程，中间件内部用 threading.local，天然隔离）
+# 最近一次 build_agent 创建的 RAG 中间件（chat_with_* 读取本轮检索命中用）。
+# server 侧用全局锁串行化 Agent 调用，中间件 threading.local 的
+# "写 → invoke → 读"在同一线程内完成，无并发串扰。
 _rag_middleware: RagContextMiddleware | None = None
 
 

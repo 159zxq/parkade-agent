@@ -1,3 +1,4 @@
+// 应用入口：注册 Element Plus（中文语言包）与全部图标组件，挂载 App。
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'

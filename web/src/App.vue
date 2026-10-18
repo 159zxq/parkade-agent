@@ -331,11 +331,17 @@
 </template>
 
 <script setup>
+// ───────────────────────────────────────────────────────────────────
+// 单文件应用（四栏布局：用户 | 对话 | 车牌识别 | 缴费+车位看板）
+// 数据流：全部经 /api/* 请求 server（8100）；看板 5 秒轮询保持实时。
+// 各区块职责见下方分区注释；识别成功会返回 gate 字段（闸机动作结果）。
+// ───────────────────────────────────────────────────────────────────
 import { computed, onMounted, onUnmounted, reactive, ref, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, ChatDotRound, Promotion, Loading, Camera, UploadFilled, DataLine, Setting, Refresh, User, Tickets, Wallet } from '@element-plus/icons-vue'
 import api from './api'
 
+// 识别结果徽章：source → 文案与配色（与 agent/vision.py 仲裁矩阵一一对应）
 const BADGES = {
   both_agree: { text: '双通道一致', type: 'success' },
   both_conflict: { text: '存在分歧（以 OCR 为准）', type: 'warning' },
@@ -344,7 +350,7 @@ const BADGES = {
   failed: { text: '识别失败，请重拍/换图', type: 'danger' }
 }
 
-// ── 用户 ──
+// ── 用户（添加/删除/切换；每用户独立对话历史与 Agent 记忆）──
 const users = ref([])
 const currentUser = ref(null)
 const addUserDialog = ref(false)
@@ -402,7 +408,7 @@ async function removeUser(u) {
   if (currentUser.value) await loadMessages()
 }
 
-// ── 聊天 ──
+// ── 聊天（发送后同步推送用户消息；回复返回引用片段供折叠展示）──
 const messages = ref([])
 const input = ref('')
 const chatting = ref(false)
@@ -449,7 +455,7 @@ async function clearChat() {
   ElMessage.success('已清空界面记录')
 }
 
-// ── 识别 ──
+// ── 识别（上传图片模拟硬件抓拍；识别成功即闸机联动：入场登记 / 出场结算）──
 const recognizing = ref(false)
 const recog = ref(null)
 const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场）
@@ -556,7 +562,7 @@ async function onUpload(file) {
   return false // 阻止 el-upload 默认上传
 }
 
-// ── 看板 ──
+// ── 看板（A/B/C 余位 + 预约保留标签；5 秒轮询；调试弹窗直改 Mock 真实状态）──
 const lots = ref([])
 const lotsUpdated = ref('—')
 const health = reactive({ mock: true, virtualTime: '', realTime: '' })
