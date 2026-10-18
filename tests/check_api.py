@@ -22,7 +22,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.config import EMBEDDING, EMBEDDING_BATCH, LLM, VISION, ModelConfig  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE = ROOT / "docs" / "样例" / "plate_京A12345.png"
+
+
+def _sample_image() -> bytes:
+    """视觉验证用样图：现场合成一张 cam-1 抓拍（cam-1 固定车牌 京A12345）。
+
+    不依赖任何磁盘素材，离线可生成；PNG 由 JPEG 转换（VLM 两接口均支持）。
+    """
+    from mock_service.camera import render_capture
+
+    return render_capture("cam-1", "normal")
 
 # auto 回退时的提示收集，最后统一打印
 _HINTS: list[str] = []
@@ -77,8 +86,9 @@ def check_vision() -> bool | None:
         print("[SKIP] 视觉：VISION_API_KEY 未配置（.env 第 2 块）")
         return None
     client = VISION.client(timeout=180.0)
-    b64 = base64.b64encode(SAMPLE.read_bytes()).decode()
-    data_url = f"data:image/png;base64,{b64}"
+    sample = _sample_image()
+    b64 = base64.b64encode(sample).decode()
+    data_url = f"data:image/jpeg;base64,{b64}"
     question = "这张图里的车牌号码是什么？只回答车牌号。"
 
     def via_chat():

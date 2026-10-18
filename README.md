@@ -49,8 +49,7 @@ python tests/reset_all.py --yes --keep-images
 | Agent 多轮记忆 | `data/checkpoints.sqlite`（SqliteSaver 全部 thread） | 所有会话记忆清空（此前对话不再被复述） |
 | 运行期图片 | `data/captures/`、`data/uploads/` | 抓拍图与上传图清空（`--keep-images` 可保留） |
 
-重置后**无需重启服务**，刷新浏览器页面即可。种子数据（车位表、相机表、费率、知识库、
-`docs/样例/` 图片）不受影响。
+重置后**无需重启服务**，刷新浏览器页面即可。种子数据（车位表、相机表、费率、知识库）不受影响。
 
 > Mock 在线时的等价位：`curl -X POST http://127.0.0.1:8000/debug/reset`（仅复位 Mock，不清用户/对话/记忆）。
 
@@ -65,7 +64,7 @@ python tests/reset_all.py --yes --keep-images
 | `server/` | Web 服务：用户管理（SQLite）/聊天/上传识别/看板调试代理/静态托管 |
 | `web/` | **Vue3 + Element Plus 前端**：用户切换、聊天（引用折叠）、车牌识别、缴费、车位看板与记录 |
 | `tests/` | 全部测试与自检脚本：冒烟 `smoke_mock`、计费 `test_pricing`、视觉 `test_vision`、E2E `test_e2e` 等 |
-| `docs/` | 部署文档、接口测试记录、AI 档案、测试报告、测试证据、样例 |
+| `docs/` | 部署文档、项目详解、AI 档案、测试证据 |
 
 ## 验收指标（90–100 档锚点）
 

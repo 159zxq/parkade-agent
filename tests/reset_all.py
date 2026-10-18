@@ -15,7 +15,7 @@
     python tests/reset_all.py --yes --keep-images   # 保留图片
 
 重置后**无需重启服务**，刷新浏览器页面即可；种子数据（车位表、相机表、费率、
-知识库、docs/样例 图）不受影响。
+知识库）不受影响。
 """
 from __future__ import annotations
 
