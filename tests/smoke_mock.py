@@ -278,12 +278,12 @@ def main() -> int:
     check("TC-Mock-52b /records 缴费记录 type=spot、无预缴字段",
           len(pays) == 1 and pays[0]["type"] == "spot" and "status" not in pays[0], str(pays))
 
-    # 月卡：按车型月卡价（小型车 300），有效期内出场免计费
+    # 月卡：统一价 300（不分车型），有效期内出场免计费
     r = client.post("/pay", json={"plate": "京B88888", "type": "monthly"})
     body = r.json()
-    check("TC-Mock-53 月卡办理（不在场，小型车 300.00，valid_until 30 天后）",
+    check("TC-Mock-53 月卡办理（统一价 300.00，不分车型，valid_until 30 天后）",
           r.status_code == 200 and body["type"] == "monthly" and body["amount"] == 300.0
-          and body["vehicle_type"] == "小型车" and body["valid_until"], str(body))
+          and "vehicle_type" not in body and body["valid_until"], str(body))
     r = client.post("/pay", json={"plate": "京B88888", "type": "monthly"})
     check("TC-Mock-53b 重复办月卡 400 INVALID_PARAM",
           r.status_code == 400 and r.json()["error"]["code"] == "INVALID_PARAM", str(r.json()))

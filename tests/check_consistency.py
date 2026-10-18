@@ -62,8 +62,8 @@ def main() -> int:
         tokens.append((f"{vt}·标准价 {fmt(v['day_rate'])}元/30分钟", f"{fmt(v['day_rate'])}元/30分钟"))
         tokens.append((f"{vt}·夜间价 {fmt(v['night_rate'])}元/30分钟", f"{fmt(v['night_rate'])}元/30分钟"))
         tokens.append((f"{vt}·封顶 {fmt(v['daily_cap'])}元", f"{fmt(v['daily_cap'])}元"))
-        tokens.append((f"{vt}·月卡 {fmt(v['monthly_card'])}元/月", f"{fmt(v['monthly_card'])}元/月"))
     tokens += [
+        (f"月卡统一价 {fmt(rates['monthly']['price'])}元/月", f"{fmt(rates['monthly']['price'])}元/月"),
         (f"免费时段 {rates['free_minutes']}分钟", f"{rates['free_minutes']}分钟"),
         (f"计费单位 {rates['unit_minutes']}分钟", f"{rates['unit_minutes']}分钟"),
         ("标准时段起点 07:00", "07:00"),
@@ -104,7 +104,9 @@ def main() -> int:
     for vt, v in vehicles.items():
         ok_night = abs(v["night_rate"] - v["day_rate"] * 0.5) < 1e-9
         check(f"{vt}: 夜间价=标准价×50%", ok_night, f"{v['night_rate']} != {v['day_rate']}×0.5")
-        check(f"{vt}: 封顶/月卡 > 0", v["daily_cap"] > 0 and v["monthly_card"] > 0)
+        check(f"{vt}: 封顶 > 0", v["daily_cap"] > 0)
+    check("月卡统一价 > 0 且有效期 ≥ 1 天",
+          rates["monthly"]["price"] > 0 and int(rates["monthly"]["valid_days"]) >= 1)
 
     print(f"\n{'ALL PASS' if not _fails else f'{len(_fails)} 项失败: {_fails}'}（共 {_count} 项）")
     return 1 if _fails else 0

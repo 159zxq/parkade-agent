@@ -16,11 +16,16 @@ areas:
   C: {name: 地下二层, total: 60}
 
 # day_rate / night_rate：元 / 30 分钟；night_rate 为标准价的 50%
-# daily_cap：自然日封顶（元）；monthly_card：月卡价（元/月）
+# daily_cap：自然日封顶（元）
+# monthly.price：月卡统一价（元/月）——不分车型，全车型一口价；valid_days：有效期（天）
 vehicles:
-  小型车: {day_rate: 3.0, night_rate: 1.5, daily_cap: 30.0, monthly_card: 300.0}
-  中型车: {day_rate: 5.0, night_rate: 2.5, daily_cap: 45.0, monthly_card: 450.0}
-  大型车: {day_rate: 8.0, night_rate: 4.0, daily_cap: 60.0, monthly_card: 600.0}
+  小型车: {day_rate: 3.0, night_rate: 1.5, daily_cap: 30.0}
+  中型车: {day_rate: 5.0, night_rate: 2.5, daily_cap: 45.0}
+  大型车: {day_rate: 8.0, night_rate: 4.0, daily_cap: 60.0}
+
+monthly:
+  price: 300.0            # 月卡统一价：不分车型
+  valid_days: 30          # 有效期（天）
 
 reserve:
   keep_minutes: 30        # 保留至预约时间后 30 分钟

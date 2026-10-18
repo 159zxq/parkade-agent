@@ -155,7 +155,7 @@
                  :class="{ ok: payHint.ok, warn: !payHint.ok }">{{ payHint.text }}</div>
             <div style="font-size: 12px; color: var(--muted)">
               现缴：结清当前待缴费用（仅在场车）；<b>未结清的车出场时闸机不予放行</b>。
-              月卡：按车型月卡价办理，有效期内停车不计费。
+              月卡：统一价 300 元/月（不分车型），有效期内停车不计费。
             </div>
           </div>
         </section>

@@ -423,16 +423,13 @@ def records(plate: str | None = None, limit: int = 20):
 
 class PayReq(BaseModel):
     plate: str
-    type: str = "spot"               # spot=现缴（当场结清出场费）/ monthly=月卡
-    vehicle_type: str | None = None  # 仅月卡用
+    type: str = "spot"               # spot=现缴（当场结清出场费）/ monthly=月卡（统一价）
 
 
 @app.post("/api/pay")
 def pay(req: PayReq):
     """缴费（现缴 spot / 月卡 monthly；透传 mock /pay）。"""
     payload = {"plate": req.plate.strip().upper(), "type": req.type}
-    if req.vehicle_type:
-        payload["vehicle_type"] = req.vehicle_type
     return _mock("POST", "/pay", payload)
 
 

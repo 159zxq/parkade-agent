@@ -72,8 +72,7 @@ class TimeReq(BaseModel):
 
 class PayReq(BaseModel):
     plate: str
-    type: str = "spot"               # spot=现缴（当场结清本次停车费）/ monthly=月卡（有效期内免计费）
-    vehicle_type: str | None = None  # 仅月卡用：车型（缺省取在场票据车型，否则小型车）
+    type: str = "spot"               # spot=现缴（当场结清本次停车费）/ monthly=月卡（统一价，有效期内免计费）
 
 
 # ---------------------------------------------------------------------------
@@ -228,17 +227,16 @@ def pay(req: PayReq):
 
     ticket = state.tickets.get(plate)
     if ptype == "monthly":
-        # 月卡：按车型月卡价，有效期一个月（30 天）
+        # 月卡：统一价（不分车型），有效期 30 天
         if state.monthly_card(plate) is not None:
             return _err(400, "INVALID_PARAM", f"车牌 {plate} 已有生效中的月卡")
-        vehicle = req.vehicle_type or (ticket.vehicle_type if ticket else DEFAULT_VEHICLE_TYPE)
-        if vehicle not in load_rates()["vehicles"]:
-            return _err(400, "INVALID_PARAM", f"未知车型: {vehicle}")
-        price = float(load_rates()["vehicles"][vehicle]["monthly_card"])
-        valid_until = clock.now() + timedelta(days=30)
+        monthly_cfg = load_rates()["monthly"]
+        price = float(monthly_cfg["price"])
+        valid_days = int(monthly_cfg.get("valid_days", 30))
+        valid_until = clock.now() + timedelta(days=valid_days)
         pay_ = state.add_payment(plate, "monthly", price, valid_until)
         return {"ok": True, "payment_id": pay_.payment_id, "plate": plate,
-                "type": "monthly", "vehicle_type": vehicle, "amount": pay_.amount,
+                "type": "monthly", "amount": pay_.amount,
                 "pay_time": pay_.pay_time.strftime(FMT),
                 "valid_until": pay_.valid_until.strftime(FMT),
                 "monthly_active": True}
