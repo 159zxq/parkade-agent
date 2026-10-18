@@ -3,7 +3,7 @@
 职责：
 - 用户管理：SQLite 落盘（data/web.sqlite），支持添加/删除/切换用户；
 - 聊天：每用户独立 thread_id（Agent 记忆落盘），历史消息入库供界面恢复；
-- 识别：上传图片（模拟硬件抓拍上传）与 mock 相机抓拍，均走同一双通道+仲裁链路；
+- 识别：上传图片（管理端模拟硬件抓拍上传）走双通道+仲裁链路，识别成功触发闸机动作；
 - 看板：读取/调试 mock 的车位与虚拟时间（透传 /debug/*）；
 - 静态托管：web/dist 构建产物（生产模式）；开发模式用 vite dev + /api 代理。
 
@@ -32,12 +32,11 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from agent.graph import build_agent, chat_with_context  # noqa: E402
-from agent.vision import PLATE_RE, recognize_plate, recognize_upload  # noqa: E402
+from agent.vision import PLATE_RE, recognize_upload  # noqa: E402
 from common.config import MOCK_BASE  # noqa: E402
 
 DB_PATH = ROOT / "data" / "web.sqlite"
 DIST_DIR = ROOT / "web" / "dist"
-CAPTURE_DIR = ROOT / "data" / "captures"
 UPLOAD_DIR = ROOT / "data" / "uploads"
 
 app = FastAPI(title="停车场智能体 Web 服务", version="1.0")
@@ -273,21 +272,16 @@ def chat(req: ChatReq):
 
 
 # ---------------------------------------------------------------------------
-# 识别（上传图片 / 相机抓拍）——均走双通道+仲裁，识别成功即触发闸机动作
+# 识别（上传图片，模拟硬件抓拍上传）——双通道+仲裁，识别成功即触发闸机动作
 # ---------------------------------------------------------------------------
-CAMERA_AREA = {"cam-1": "A", "cam-2": "B", "cam-3": "C"}   # 入口相机物理所在区
-
-
-def _gate_action(plate: str, *, camera_id: str | None = None,
-                 action: str = "entry", area: str | None = None) -> dict:
+def _gate_action(plate: str, *, action: str = "entry", area: str | None = None) -> dict:
     """闸机动作（识别成功后的放行语义，模拟硬件闸机联动）：
 
-    - 出口（`action="exit"` 或 cam-4）→ 真实结算出场（返回费用明细）；
-    - 入口 → 登记入场。区域分配优先级：显式 `area`（网页可选 A/B/C）
-      > 入口相机所在区（cam-1=A/cam-2=B/cam-3=C） > 自动分配（A→B→C 找空位）。
+    - `action="exit"` → 真实结算出场（未结清费用拦截，返回费用明细）；
+    - `entry` → 登记入场。区域分配：显式 `area`（网页可选 A/B/C），空则自动分配（A→B→C 找空位）。
     返回 {action, ok, message, ...}；mock 业务错误/不可达时 ok=false（不失真：如实转述）。
     """
-    do_exit = action == "exit" or camera_id == "cam-4"
+    do_exit = action == "exit"
     try:
         if do_exit:
             r = httpx.post(f"{MOCK_BASE}/exit", json={"plate": plate}, timeout=15)
@@ -308,9 +302,7 @@ def _gate_action(plate: str, *, camera_id: str | None = None,
             return {"action": "exit", "ok": False, "message": msg}
 
         payload: dict = {"plate": plate}
-        if camera_id:
-            payload["camera_id"] = camera_id
-        target_area = area or (CAMERA_AREA.get(camera_id) if camera_id else None)
+        target_area = area
         if target_area:
             payload["area"] = target_area
         r = httpx.post(f"{MOCK_BASE}/entry", json=payload, timeout=15)
@@ -338,7 +330,7 @@ async def recognize(file: UploadFile = File(...), action: str = Form("entry"),
     """上传识别（表单可带 action=entry|exit 与 area=A|B|C|空=自动）。
 
     识别成功即执行闸机动作：entry → 登记入场（area 指定区域，空则自动分配）；
-    exit → 结算出场（与出口相机一致）。
+    exit → 结算出场（未结清费用拦截）。
     """
     action = (action or "entry").strip().lower()
     if action not in ("entry", "exit"):
@@ -362,29 +354,17 @@ async def recognize(file: UploadFile = File(...), action: str = Form("entry"),
     return {"ok": True, "result": result, "gate": gate}
 
 
-class CaptureReq(BaseModel):
-    camera_id: str
-
-
-@app.post("/api/capture")
-def capture(req: CaptureReq):
-    with _agent_lock:
-        result = recognize_plate(req.camera_id, "normal")
-    if result.get("image_path"):
-        result["image_url"] = _media_url("captures", Path(result["image_path"]).name)
-    # 闸机联动：cam-1/2/3 = 各区入口（进所在区）；cam-4 = 出口（结算出场）
-    gate = _gate_action(result["plate"], camera_id=req.camera_id) if result.get("plate") else None
-    return {"ok": True, "result": result, "gate": gate}
-
-
 def _media_url(kind: str, filename: str) -> str:
     return f"/api/media/{kind}/{filename}"
 
 
 @app.get("/api/media/{kind}/{filename}")
 def media(kind: str, filename: str):
-    """受控图片读取：仅允许 data/captures 与 data/uploads 下的文件。"""
-    base = {"captures": CAPTURE_DIR, "uploads": UPLOAD_DIR}.get(kind)
+    """受控图片读取：仅允许 data/uploads 下的文件（管理端上传图回显）。
+
+    相机测试图不经本接口下发（测试项，直连 mock 的 /camera 查看）。
+    """
+    base = {"uploads": UPLOAD_DIR}.get(kind)
     if base is None:
         return JSONResponse(status_code=404, content={"ok": False, "error": "未知目录"})
     target = (base / filename).resolve()

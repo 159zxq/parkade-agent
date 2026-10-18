@@ -1,7 +1,7 @@
 """Mock 停车场服务 —— 全部接口实现（FastAPI）。
 
 覆盖：车位状态、出入场（含先缴清后出场的闸机规则）、预约、缴费（现缴/月卡）、
-相机抓拍（合成图）、单车查询、记录留痕、虚拟时钟与看板调试。
+相机抓拍（下发测试图）、单车查询、记录留痕、虚拟时钟与看板调试。
 
 持久化设计：
 - 进出场/缴费/预约全量落盘 SQLite（mock_service/db.py → data/mock.sqlite）：
@@ -15,22 +15,26 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from common.pricing import calc_fee, load_rates
-from mock_service.camera import render_capture
 from mock_service.clock import clock
 from mock_service.db import db
 from mock_service.state import (
     CAMERA_TABLE,
+    CAMERA_VARIANTS,
     DEFAULT_VEHICLE_TYPE,
     FMT,
     normalize_plate,
     state,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+CAPTURE_DIR = ROOT / "data" / "captures"   # 相机测试图（tests/make_captures.py 生成）
 
 areas_cfg = load_rates()["areas"]
 reserve_cfg = load_rates().get("reserve", {})
@@ -263,16 +267,23 @@ def pay(req: PayReq):
 
 
 # ---------------------------------------------------------------------------
-# 相机抓拍
+# 相机抓拍（下发测试图）
+# 真实系统由相机设备侧出图；mock 只做图片出口——直接下发 data/captures/
+# 下按 {相机}_{变体}.jpg 命名的测试图（生成：python tests/make_captures.py）。
 # ---------------------------------------------------------------------------
 @app.get("/camera/{camera_id}/capture")
 def capture(camera_id: str, variant: str = "normal"):
     if camera_id not in CAMERA_TABLE:
         return _err(404, "CAMERA_NOT_FOUND", f"未知相机: {camera_id}")
-    if variant not in ("normal", "blur", "occluded"):
-        return _err(400, "INVALID_PARAM", f"variant 只能为 normal|blur|occluded，收到 {variant!r}")
-    jpeg = render_capture(camera_id, variant)
-    return Response(content=jpeg, media_type="image/jpeg")
+    if variant not in CAMERA_VARIANTS:
+        return _err(400, "INVALID_PARAM",
+                    f"variant 只能为 {'|'.join(CAMERA_VARIANTS)}，收到 {variant!r}")
+    path = CAPTURE_DIR / f"{camera_id}_{variant}.jpg"
+    if not path.exists():
+        return _err(503, "CAPTURE_MISSING",
+                    f"测试抓拍图缺失（{path.name}）：请先在项目根目录运行 "
+                    f"python tests/make_captures.py")
+    return Response(content=path.read_bytes(), media_type="image/jpeg")
 
 
 @app.get("/debug/truth/{camera_id}")

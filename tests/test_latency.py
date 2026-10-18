@@ -18,12 +18,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import httpx  # noqa: E402
 
 from agent.graph import build_agent, chat_with_trace  # noqa: E402
 from agent.vision import recognize_plate  # noqa: E402
 from common.config import MOCK_BASE  # noqa: E402
+from make_captures import ensure_captures  # noqa: E402
 
 DIALOG_QUESTIONS = [
     "A区还有多少车位？", "小型车白天怎么收费？", "停车多长时间内免费？",
@@ -82,6 +84,7 @@ def main() -> int:
         time.sleep(1.2)  # 对网关友好，避免限流
 
     print(f"\n== 识别链路（{args.vision} 次，本地OCR ∥ 视觉API）==")
+    ensure_captures()   # 测试图缺失自动补齐
     v_times: list[float] = []
     v_detail: list[str] = []
     for i in range(min(args.vision, len(VISION_CAMS))):

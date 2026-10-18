@@ -1,10 +1,11 @@
-"""双通道识别测试 —— 仲裁矩阵 + 实拍三变体。
+"""双通道识别测试 —— 仲裁矩阵 + 测试图三变体。
 
 运行（需 mock 服务在线：uvicorn mock_service.main:app --port 8000）：
-    python tests/test_vision.py          # 全量：仲裁单测 + 实拍
+    python tests/test_vision.py          # 全量：仲裁单测 + 三变体
     python tests/test_vision.py --unit   # 仅离线仲裁单测（不联网）
 
-实拍预期（三变体的真实分支以本次输出为准，记录到 docs/测试证据/）：
+图源：data/captures/ 下的相机测试图（tests/make_captures.py 生成，缺失自动补齐）。
+三变体的真实分支以本次输出为准（记录到 docs/测试证据/）：
     normal   → both_agree 或 ocr_only（OCR 必成功；VLM 视服务波动）
     blur     → vlm_only 或 failed（OCR 必失败；VLM 偶发波动）
     occluded → failed（双通道均失败 → 重拍提示）
@@ -15,8 +16,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent.vision import arbitrate, recognize_plate  # noqa: E402
+from make_captures import ensure_captures  # noqa: E402
 
 _fails: list[str] = []
 _count = 0
@@ -58,15 +61,15 @@ def unit_tests() -> None:
 
 
 def live_tests() -> None:
-    """实拍三变体（TC-识别-10..15）。"""
-    # normal：OCR 必成功（合成图规格已实测 3/3）
+    """测试图三变体（TC-识别-10..15）。"""
+    # normal：OCR 必成功（测试图规格已实测 3/3）
     r = recognize_plate("cam-1", "normal")
     check("TC-识别-10 cam-1 normal：plate=京A12345 且 OCR 通道有值",
           r["plate"] == "京A12345" and r["ocr"] is not None,
           str({k: r[k] for k in ("plate", "source", "ocr", "vlm")}))
     check("TC-识别-10b source ∈ {both_agree, ocr_only, both_conflict}",
           r["source"] in ("both_agree", "ocr_only", "both_conflict"), r["source"])
-    print(f"      实拍详情：source={r['source']} ocr={r['ocr']} "
+    print(f"      详情：source={r['source']} ocr={r['ocr']} "
           f"vlm={(r['vlm'] or {}).get('plate') if r['vlm'] else None} "
           f"elapsed={r['elapsed_ms']}ms")
 
@@ -75,7 +78,7 @@ def live_tests() -> None:
     check("TC-识别-15 blur：OCR 通道失败（VLM 兜底或双失败）",
           rb["ocr"] is None and rb["source"] in ("vlm_only", "failed"),
           f"ocr={rb['ocr']} source={rb['source']}")
-    print(f"      实拍详情 blur：source={rb['source']} plate={rb['plate']} "
+    print(f"      详情 blur：source={rb['source']} plate={rb['plate']} "
           f"vlm={(rb['vlm'] or {}).get('plate') if rb['vlm'] else None} "
           f"elapsed={rb['elapsed_ms']}ms（演示锚点：vlm_only=VLM兜底走近路）")
 
@@ -94,12 +97,13 @@ def main() -> int:
     only_unit = "--unit" in sys.argv
     unit_tests()
     if not only_unit:
-        print("\n—— 实拍（需 mock 服务在线）——")
+        print("\n—— 测试图三变体（需 mock 服务在线）——")
+        ensure_captures()   # 测试图缺失自动补齐
         try:
             live_tests()
         except Exception as e:  # noqa: BLE001
-            print(f"[FAIL] 实拍阶段异常（mock 未启动？）：{e}")
-            _fails.append("实拍阶段")
+            print(f"[FAIL] 三变体阶段异常（mock 未启动？）：{e}")
+            _fails.append("三变体阶段")
 
     print(f"\n{'ALL PASS' if not _fails else f'{len(_fails)} 项失败: {_fails}'}（共 {_count} 项）")
     return 1 if _fails else 0

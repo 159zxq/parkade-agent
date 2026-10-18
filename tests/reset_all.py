@@ -7,7 +7,8 @@
 2. **Web 用户与对话历史**（data/web.sqlite）：清空 users/messages，重建初始
    「演示用户（京A12345）」，用户编号从 1 重新开始；
 3. **Agent 多轮记忆**（data/checkpoints.sqlite）：清空全部 thread 会话记忆；
-4. **运行期图片**（data/captures、data/uploads）：抓拍图与上传图（`--keep-images` 可保留）。
+4. **运行期图片**：`data/uploads/` 上传图清空；`data/captures/` 相机测试图
+   重建为生成版（`tests/make_captures.py`；`--keep-images` 可整体保留）。
 
 用法（项目根目录，两个服务可开可关均适用）：
     python tests/reset_all.py            # 交互确认
@@ -27,16 +28,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import httpx  # noqa: E402
 
 from common.config import MOCK_BASE  # noqa: E402
+from make_captures import ensure_captures  # noqa: E402
 
 DATA = ROOT / "data"
 MOCK_DB = DATA / "mock.sqlite"
 WEB_DB = DATA / "web.sqlite"
 CKPT_DB = DATA / "checkpoints.sqlite"
-IMG_DIRS = (DATA / "captures", DATA / "uploads")
+UPLOAD_DIR = DATA / "uploads"
+CAPTURE_DIR = DATA / "captures"
 
 INITIAL_USER = ("演示用户", "京A12345")
 
@@ -95,9 +99,9 @@ def reset_agent_memory() -> str:
 
 
 def reset_images() -> str:
-    """运行期图片：data/captures 与 data/uploads。"""
+    """运行期图片：上传图清空；相机测试图重建为生成版（供 /camera 下发）。"""
     n = 0
-    for d in IMG_DIRS:
+    for d in (UPLOAD_DIR, CAPTURE_DIR):
         if not d.exists():
             continue
         for f in d.iterdir():
@@ -107,7 +111,9 @@ def reset_images() -> str:
                     n += 1
                 except OSError:
                     pass
-    return f"已清理运行期图片 {n} 个（data/captures、data/uploads）"
+    made = ensure_captures()
+    return (f"已清理图片 {n} 个（data/uploads、data/captures）；"
+            f"相机测试图重建 {len(made)} 张（data/captures）")
 
 
 def main() -> int:

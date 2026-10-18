@@ -5,6 +5,7 @@
 运行（项目根目录）：python tests/smoke_mock.py
 测试隔离：默认写独立库 data/mock_smoke.sqlite（MOCK_DB 可覆盖），
 不影响运行中服务的 data/mock.sqlite。
+相机用例依赖 data/captures/ 测试图（缺失时由 make_captures 自动补齐）。
 """
 
 from __future__ import annotations
@@ -15,12 +16,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 # 独立记录库：必须在 import mock_service 之前设置（db 模块导入时读取）
 os.environ.setdefault("MOCK_DB", str(ROOT / "data" / "mock_smoke.sqlite"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from make_captures import ensure_captures  # noqa: E402
 from mock_service.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -38,6 +41,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> int:
+    ensure_captures()   # 相机用例的测试图（缺失自动补齐）
     # 0) 复位
     r = client.post("/debug/reset")
     check("TC-Mock-00 POST /debug/reset 200", r.status_code == 200 and r.json().get("ok") is True)
@@ -130,10 +134,10 @@ def main() -> int:
     r = client.post("/exit", json={"plate": "京A12345", "dry_run": True})
     check("TC-Mock-20 例2 跨夜间 total=7.50", r.json()["total"] == 7.5, str(r.json()))
 
-    # 11) 相机图三变体 + truth
+    # 11) 相机测试图三变体 + truth
     for v in ("normal", "blur", "occluded"):
         r = client.get("/camera/cam-1/capture", params={"variant": v})
-        check(f"TC-Mock-13 capture {v} 返回 JPEG",
+        check(f"TC-Mock-13 /camera 下发测试图 {v} 返回 JPEG",
               r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
               and len(r.content) > 1000, f"status={r.status_code} len={len(r.content)}")
     r = client.get("/debug/truth/cam-1")

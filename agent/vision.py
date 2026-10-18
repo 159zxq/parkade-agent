@@ -11,9 +11,11 @@
   双失败                  → failed          提示重拍
 
 实现要点：
-- 双通道并行：ThreadPoolExecutor 两线程（本模块在同步工具调度下被调用，
+- 双通道并行：ThreadPoolExecutor 两线程（本模块在同步调度下被调用，
   线程池避免嵌套事件循环问题）；
 - 无缓存：每次调用都真实执行双通道识别（每次演示/测试均为真实链路）；
+- 相机测试图不落盘：图源即 data/captures/ 下按 {相机}_{变体}.jpg 命名的测试图
+  （tests/make_captures.py 生成；识别只读不写）；
 - 返回结构：{plate, source, ocr, vlm, confidence, camera_id, variant,
   origin, image_path, elapsed_ms}（识别失败时另附 error 说明）。
 """
@@ -159,7 +161,7 @@ def arbitrate(ocr: dict | None, vlm: dict | None) -> tuple[str, str | None, floa
 
 
 # ---------------------------------------------------------------------------
-# 主入口（同步；供 langchain 工具 / 测试脚本 / 前端调用）
+# 主入口（同步；供测试脚本与链路自检调用——识别链路验证）
 # ---------------------------------------------------------------------------
 def _capture(camera_id: str, variant: str) -> tuple[bytes | None, str | None]:
     try:
@@ -170,7 +172,12 @@ def _capture(camera_id: str, variant: str) -> tuple[bytes | None, str | None]:
     if resp.status_code == 404:
         return None, f"未知相机: {camera_id}"
     if resp.status_code != 200:
-        return None, f"抓拍失败: HTTP {resp.status_code}"
+        try:   # mock 错误对象带可读提示（如测试图缺失时的生成指引）
+            msg = ((resp.json().get("error") or {}).get("message")
+                   or f"抓拍失败: HTTP {resp.status_code}")
+        except Exception:  # noqa: BLE001
+            msg = f"抓拍失败: HTTP {resp.status_code}"
+        return None, msg
     return resp.content, None
 
 
@@ -179,16 +186,6 @@ def _wait(future, timeout: float) -> dict | None:
         return future.result(timeout=timeout)
     except Exception:  # noqa: BLE001  超时/异常 → 通道失败
         return None
-
-
-def _save_capture(camera_id: str, variant: str, jpg: bytes) -> str:
-    CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-    path = CAPTURE_DIR / f"{camera_id}_{variant}.jpg"
-    try:
-        path.write_bytes(jpg)
-    except OSError:
-        pass
-    return str(path)
 
 
 UPLOAD_DIR = ROOT / "data" / "uploads"
@@ -251,7 +248,8 @@ def recognize_upload(image_bytes: bytes, filename: str = "upload.jpg") -> dict:
 
 
 def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
-    """抓拍单帧 → 双通道并行识别 → 仲裁。返回标准结果结构。每次调用真实执行。"""
+    """读取相机测试图（mock /camera 下发 data/captures）→ 双通道并行识别 → 仲裁。
+    返回标准结果结构。每次调用真实执行。"""
     base = {"plate": None, "source": "failed", "ocr": None, "vlm": None,
             "confidence": None, "camera_id": camera_id, "variant": variant,
             "origin": "camera", "image_path": None, "elapsed_ms": None}
@@ -260,6 +258,5 @@ def recognize_plate(camera_id: str, variant: str = "normal") -> dict:
     if jpg is None:
         return {**base, "error": err, "elapsed_ms": 0}
 
-    image_path = _save_capture(camera_id, variant, jpg)
-    return recognize_image_bytes(jpg, image_path=image_path, origin="camera",
-                                 camera_id=camera_id, variant=variant)
+    return recognize_image_bytes(jpg, image_path=str(CAPTURE_DIR / f"{camera_id}_{variant}.jpg"),
+                                 origin="camera", camera_id=camera_id, variant=variant)

@@ -1,7 +1,10 @@
-"""LPR 可行性验证 —— 合成车牌图 → HyperLPR3 识别，打印结果。
+"""合成车牌图规格校准 —— 合成图 → HyperLPR3 识别，打印结果。
 
-用于校准合成图规格（底色/字体/字号，即 mock 相机图规格）与识别链路可达性。
-运行：python tests/check_lpr.py
+用于校准测试抓拍图的绘制规格（底色/字体/字号），即 tests/make_captures.py
+的冻结规格依据（260×82 车牌 / 52pt，实测识别 3/3，置信度 0.958–0.981）。
+改动 make_captures.py 的绘制参数前先跑本脚本验证识别仍通过。
+
+运行（项目根目录）：python tests/check_lpr.py
 """
 from __future__ import annotations
 
@@ -9,51 +12,14 @@ import io
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np  # noqa: E402
+from PIL import Image  # noqa: E402
 
-BLUE = (18, 84, 163)      # 小型车蓝牌底色
-WHITE = (245, 245, 245)
-
-# 候选字体（Windows 常见；取第一个存在的）
-FONT_CANDIDATES = [
-    "C:/Windows/Fonts/msyhbd.ttc",   # 微软雅黑 Bold
-    "C:/Windows/Fonts/msyh.ttc",
-    "C:/Windows/Fonts/simhei.ttf",
-    "C:/Windows/Fonts/simsun.ttc",
-]
-
-
-def pick_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in FONT_CANDIDATES:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size)
-    raise SystemExit("找不到中文字体，请检查 C:/Windows/Fonts")
-
-
-def synth_plate(plate: str, w: int = 260, h: int = 82) -> Image.Image:
-    """合成蓝底白字车牌（居中）。260×82 / 52pt 是实测 HyperLPR3 识别 3/3 的规格，
-    改动前先跑本脚本验证。"""
-    img = Image.new("RGB", (w, h), BLUE)
-    d = ImageDraw.Draw(img)
-    d.rectangle([2, 2, w - 3, h - 3], outline=WHITE, width=3)  # 白框
-    font = pick_font(size=52)
-    bbox = d.textbbox((0, 0), plate, font=font)
-    d.text(((w - bbox[2] + bbox[0]) / 2, (h - bbox[3] + bbox[1]) / 2), plate,
-           font=font, fill=WHITE)
-    return img
-
-
-def synth_scene(plate: str, camera: str = "cam-1", variant: str = "normal") -> Image.Image:
-    """640×480 监控场景：灰底 + 中央车牌（位置 (190,199)）+ 右下角水印（按此规格绘制）。"""
-    scene = Image.new("RGB", (640, 480), (150, 150, 148))
-    plate_img = synth_plate(plate)
-    scene.paste(plate_img, ((640 - plate_img.width) // 2, (480 - plate_img.height) // 2))
-    d = ImageDraw.Draw(scene)
-    d.text((10, 455), f"{camera} {variant}", font=pick_font(18), fill=(230, 230, 230))
-    return scene
+from make_captures import synth_scene  # noqa: E402
 
 
 def main() -> int:
@@ -63,7 +29,7 @@ def main() -> int:
     plates = ["京A12345", "京B88888", "沪C66666"]
     ok = 0
     for plate in plates:
-        scene = synth_scene(plate)
+        scene = synth_scene("cam-1", "normal", plate=plate)
         buf = io.BytesIO()
         scene.save(buf, "JPEG", quality=92)
         arr = np.array(Image.open(io.BytesIO(buf.getvalue())).convert("RGB"))

@@ -4,7 +4,8 @@
     python tests/prewarm.py
 
 做两件事：
-1. 四台相机抓拍识别各跑一次（检查双通道链路 + 记录真实耗时，供测试报告延迟数据）；
+1. 四台相机的测试抓拍图识别各跑一次（检查双通道链路 + 记录真实耗时，供测试报告延迟数据；
+   测试图缺失自动补齐）；
    cam-1 额外跑 blur/occluded 变体，确认演示分支现场可达（blur 的 VLM 通道偶发波动，
    多试几次以确认现场可复现；无缓存，每次都真实识别）；
 2. 预跑 10 条演示高频问题走 RAG 检索（暖连接 + 记录耗时）。
@@ -18,9 +19,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent.rag import retrieve  # noqa: E402
 from agent.vision import recognize_plate  # noqa: E402
+from make_captures import ensure_captures  # noqa: E402
 
 CAMERAS = ["cam-1", "cam-2", "cam-3", "cam-4"]
 DEMO_QUESTIONS = [
@@ -67,6 +70,9 @@ def demo_branches() -> int:
 
 def main() -> int:
     fails = 0
+    made = ensure_captures()   # 相机测试图缺失自动补齐
+    if made:
+        print(f"（已补齐相机测试图 {len(made)} 张 → data/captures/）")
 
     print("== 1) 相机识别链路自检（真实识别，无缓存）==")
     for cam in CAMERAS:

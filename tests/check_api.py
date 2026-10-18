@@ -23,13 +23,16 @@ from common.config import EMBEDDING, EMBEDDING_BATCH, LLM, VISION, ModelConfig  
 
 
 def _sample_image() -> bytes:
-    """视觉验证用样图：现场合成一张 cam-1 抓拍 JPEG（cam-1 固定车牌 京A12345）。
+    """视觉验证用样图：cam-1 的测试抓拍图（固定车牌 京A12345）。
 
-    不依赖任何磁盘素材，离线可生成；与运行时识别链路用图完全一致。
+    取自 data/captures/（tests/make_captures.py 生成，缺失自动补齐）；
+    与 mock 的 /camera/cam-1/capture 下发的完全是同一张图。
     """
-    from mock_service.camera import render_capture
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from make_captures import CAPTURE_DIR, ensure_captures
 
-    return render_capture("cam-1", "normal")
+    ensure_captures()
+    return (CAPTURE_DIR / "cam-1_normal.jpg").read_bytes()
 
 
 # auto 回退时的提示收集，最后统一打印

@@ -78,7 +78,7 @@
       <!-- ───── 第三栏：车牌识别 ───── -->
       <section class="card recog-pane">
         <div class="card-title">
-          <span class="t"><el-icon><Camera /></el-icon>车牌识别（双通道）</span>
+          <span class="t"><el-icon><Camera /></el-icon>车牌识别（管理端 · 双通道）</span>
         </div>
         <div class="upload-row">
           <div class="gate-row">
@@ -455,7 +455,7 @@ async function clearChat() {
   ElMessage.success('已清空界面记录')
 }
 
-// ── 识别（上传图片模拟硬件抓拍；识别成功即闸机联动：入场登记 / 出场结算）──
+// ── 识别（管理端上传图片模拟硬件抓拍；识别成功即闸机联动：入场登记 / 出场结算）──
 const recognizing = ref(false)
 const recog = ref(null)
 const gate = ref(null)   // 识别成功后的闸机动作结果（入场/出场）

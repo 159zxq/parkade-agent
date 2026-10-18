@@ -1,14 +1,16 @@
-"""Agent 工具层 —— 五个工具的统一接口。
+"""Agent 工具层 —— 四个工具的统一接口（车位查询/入场登记/计费/预约）。
 
 错误处理策略：工具内部不抛异常，一律返回 {"ok": false, "error": ...}，
 让 Agent 把失败原样转述给用户（统一错误码）。
+
+边界：服务面向车主个人事务，**不提供监控画面查看类工具**；
+车牌识别（双通道+仲裁）由管理端识别栏/相机测试通道触发，不经 Agent。
 """
 from __future__ import annotations
 
 import httpx
 from langchain_core.tools import tool
 
-from agent.vision import recognize_plate as _vision_recognize
 from common.config import MOCK_BASE
 
 _TIMEOUT = 15.0
@@ -31,27 +33,15 @@ def _post(path: str, payload: dict):
 
 
 @tool
-def recognize_plate(camera_id: str) -> dict:
-    """对指定相机抓拍单帧并识别车牌（双通道：本地 OCR + 视觉模型，自动仲裁）。
-    相机 id：cam-1/cam-2/cam-3 为各入口，cam-4 为出口。
-    返回 source 字段：both_agree(双通道一致)/both_conflict(存在分歧,以OCR为准)/
-    ocr_only/vlm_only/failed(识别失败,请引导用户重拍)。plate 为 null 即识别失败。"""
-    return _vision_recognize(camera_id)
-
-
-@tool
 def query_parking_status(area: str = "") -> dict:
     """查询停车场车位状态。area 可选 'A'/'B'/'C' 指定区域，留空返回全部区域。"""
     return _get("/lots/status", **({"area": area.strip().upper()} if area.strip() else {}))
 
 
 @tool
-def register_entry(plate: str, camera_id: str = "") -> dict:
+def register_entry(plate: str) -> dict:
     """车辆入场登记。plate 为车牌号（如 京A12345）。成功返回 ticket_id 与入场时间。"""
-    payload: dict = {"plate": plate}
-    if camera_id:
-        payload["camera_id"] = camera_id
-    return _post("/entry", payload)
+    return _post("/entry", {"plate": plate})
 
 
 @tool
@@ -71,5 +61,4 @@ def reserve_spot(plate: str, reserve_time: str, area: str = "") -> dict:
     return _post("/reserve", payload)
 
 
-ALL_TOOLS = [recognize_plate, query_parking_status, register_entry,
-             calculate_exit_fee, reserve_spot]
+ALL_TOOLS = [query_parking_status, register_entry, calculate_exit_fee, reserve_spot]

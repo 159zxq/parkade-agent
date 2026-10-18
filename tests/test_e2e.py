@@ -4,7 +4,7 @@
     python tests/test_e2e.py
 
 三个情景（测试报告素材）：
-  情景1 业务全流程（6 轮）：车位→抓拍→入场→计费→费率依据引用
+  情景1 业务全流程（6 轮）：车位→监控拒答→入场登记→计费→费率依据引用
   情景2 多轮指代（5 轮）：费率追问链（小型→中型→夜间→封顶→跨天）
   情景3 域外拒答（5 问）：不编造、不越界
 
@@ -61,9 +61,10 @@ def scenario1(agent, ts: str) -> None:
     check("1.1 车位查询有数字", bool(re.search(r"\d+", r)))
 
     r, _ = turn(agent, thread, "情景1", "帮我看下 cam-1 相机拍到了什么车。")
-    check("1.2 抓拍识别出 京A12345", "京A12345" in r.replace(" ", ""))
+    check("1.2 监控查看请求被拒（服务不提供画面查看，不臆造车牌）",
+          any(k in r for k in REFUSE_KW) and "京A12345" not in r.replace(" ", ""))
 
-    turn(agent, thread, "情景1", "让这辆车入场吧。")
+    turn(agent, thread, "情景1", "好吧，请把车牌 京A12345 登记入场。")
     free = httpx.get(f"{MOCK_BASE}/lots/status?area=A", timeout=10).json()["areas"][0]["free"]
     check(f"1.3 入场状态生效（A区 free=26，实际 {free}）", free == 26)
 
