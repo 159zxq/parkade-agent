@@ -109,6 +109,30 @@ class RagContextMiddleware(AgentMiddleware):
     def set_user_context(self, text: str | None) -> None:
         self._local.user_context = text
 
+    def _time_block(self) -> str:
+        """「当前时间」块：预约/计费等涉及日期的问题必须以真实当前时间为准。
+
+        时间取自 mock 的虚拟时钟（计费演示可快进）；mock 不可达时回退系统时间。
+        """
+        try:
+            from common.config import MOCK_BASE
+            import httpx
+
+            r = httpx.get(f"{MOCK_BASE}/debug/time", timeout=3)
+            now = r.json().get("virtual_time") or ""
+        except Exception:  # noqa: BLE001  mock 未启动 → 回退本机时间
+            from datetime import datetime
+
+            now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if not now:
+            return ""
+        return (
+            "【当前时间】（系统实时数据，凡涉及「今天/明天/几号/预约时间」等日期判断，"
+            "一律以此为准；用户只说到「月.日」或「几点」时，年份/日期按此推算，禁止臆造其他年份。"
+            "若用户给出的日期已早于当前时间，先指出并请用户确认，不要自行改写成往年。）\n"
+            f"当前时间：{now.replace('T', ' ')}"
+        )
+
     def wrap_model_call(self, request: ModelRequest, handler: Callable):
         query = _recent_human_text(list(request.messages))
         hits: list[dict] = []
@@ -122,6 +146,9 @@ class RagContextMiddleware(AgentMiddleware):
                 error = str(e)
 
         blocks: list[str] = []
+        time_block = self._time_block()
+        if time_block:
+            blocks.append(time_block)
         user_ctx = getattr(self._local, "user_context", None)
         if user_ctx:
             blocks.append(user_ctx)
